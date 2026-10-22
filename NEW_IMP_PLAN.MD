@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **Reviewed and validated by Claude against `docs/Expense Tracker Design Document_2.pdf` and `docs/UI design.html` (2026-10-22).** Corrections applied inline, marked `[ADDED]` / `[VALIDATED]` / `[RESOLVED]`. All of section 2 is now answered — the 3 items that needed user input (Gmail scope, IAP product status, OAuth client status) were asked and answered in chat: **Gmail deferred, Play Console product not yet created, Google Cloud OAuth client not yet set up.** This pass only edited this plan file — no implementation work has started. No work starts until the user posts approval in section 7.
+Status: **Implementation pass 1 complete (see sections 8-10); awaiting your decisions and device testing.** Earlier: reviewed and validated by Claude against `docs/Expense Tracker Design Document_2.pdf` and `docs/UI design.html` (2026-10-22).** Corrections applied inline, marked `[ADDED]` / `[VALIDATED]` / `[RESOLVED]`. All of section 2 is now answered — the 3 items that needed user input (Gmail scope, IAP product status, OAuth client status) were asked and answered in chat: **Gmail deferred, Play Console product not yet created, Google Cloud OAuth client not yet set up.** This pass only edited this plan file — no implementation work has started. No work starts until the user posts approval in section 7.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -416,17 +416,78 @@ All coding for Phases 0-4 and 6 is done. Verified here: `npm test` (129 tests, i
 | P2-14 Tests/docs | Done | README, AGENTS.md corrected. |
 | P2-1 Gmail | Deferred | unchanged, per Q5. |
 
-### Decisions I made that you may want to reverse
-- `android:allowBackup="false"` (keeps the DB out of cloud backup, in line with "never leaves your device"; the cost is no automatic restore on a new phone).
-- Reconciling an account sets a new baseline "from now"; later-dated entries count, earlier-dated ones do not.
-- Removed `READ/WRITE_EXTERNAL_STORAGE` and `SYSTEM_ALERT_WINDOW`; added `CAMERA`, `RECORD_AUDIO`, `POST_NOTIFICATIONS`, `BILLING`.
-- `npm install` needs `--legacy-peer-deps` (upstream peer ranges conflict).
+### What is implemented (summary)
+- **Data and logic (Phases 0-1):** schema v2 + migration, accounts table, persisted settings, data-access layer, hardened SMS parser (45 fixtures), idempotent ingest (live, history import, daily audit), refund linking, merchant rules, analytics, subscription detection, notifications, trial/billing logic, export formatters.
+- **UI (Phases 2-4):** functional onboarding; Dashboard, Ledger, Analytics, Accounts (with subscriptions), Settings (with rules manager); receipt camera on VisionCamera v5; voice entry on the current speech API.
+- **Release (Phase 6, code part):** share-sheet export (CSV/JSON/PDF), billing + paywall behind a flag, Android-only config, cleaned manifest, `eas.json`, error boundary, README, corrected AGENTS.md.
+- **Verified here:** 129 tests pass, lint clean, Android JS bundle builds. **Not verified:** anything on a device (see manual steps).
+- **Not built:** Gmail (deferred), optional daily trend line, optional daily "needs review" digest.
 
-### Manual steps for you (collected in one place)
-1. Build and run a development build on a real Android device: `npx expo run:android`. The Kotlin changes have never been compiled, so build errors there are possible.
-2. Walk through the section 6 checklist above on the device. SMS test: send yourself a message from a sender id like `VM-HDFCBK` (an emulator can inject SMS via the extended-controls SMS tab).
-3. Play Console: create the subscription product `com.decanode.outspend.premium_monthly`, add license testers; test purchase/restore; then set `enforcePaywall: true` in `src/config.js`.
-4. Play Console: SMS Permissions Declaration Form, Data safety form, privacy-policy URL.
-5. Signing/upload key and `eas build --profile production`.
-6. Review icon/splash assets (`assets/`), and the Android splash drawable.
-7. Decide on Gmail later: Google Cloud OAuth client (Android + web), restricted-scope verification.
+---
+
+## 9. Decisions needed from you
+
+Defaults are what is in the code now. Reply with your choice (or edit this file) and I will change it.
+
+| # | Decision | Default in code | Alternatives / trade-off |
+|---|---|---|---|
+| D1 | **Cloud backup of the database** | `allowBackup="false"`: data never leaves the phone, but nothing restores on a new phone (user must export first) | `true`: automatic restore via Google backup, but the finance DB is copied to the user's Google Drive, which weakens the "100% private" promise |
+| D2 | **When to turn the paywall on** | Off (`enforcePaywall: false`); trial tracked and shown in Settings | Turn on for the production build once the Play product exists. Needs your go-ahead at release time |
+| D3 | **Trial reset by reinstall** | Trial start is stored locally, so clearing data/reinstalling restarts it | Accept (matches the privacy-first design), or tie the trial to Play (needs a free-trial offer on the subscription in Play Console) |
+| D4 | **Killed-app SMS capture** | No manifest receiver; SMS received while the process is dead are imported on next launch/resume and by the daily task | Add a manifest receiver + foreground/worker service for true real-time capture: more code, battery and Play policy risk |
+| D5 | **Backdated entries vs reconciliation** | After you reconcile a balance, only transactions dated after that moment affect it | Alternative: store an explicit adjustment transaction so older-dated edits also shift the balance |
+| D6 | **Gmail receipts** | Deferred, stub left untouched | Needs an OAuth client and Google's restricted-scope review; confirm if/when to resume (Phase 5) |
+| D7 | **Subscriptions location** | A section in the Accounts tab | Could be its own tab or a Settings screen |
+| D8 | **Optional extras** | Not built: daily trend line in Analytics, daily "needs review" digest notification | Say which (if any) you want |
+| D9 | **Language** | Plain JS (Q6) | TypeScript migration can be done later without blocking anything |
+| D10 | **Push/merge** | Work is on branch `feat/implementation`, pushed for review | Open a PR and merge to `main` when you are happy |
+
+---
+
+## 10. Manual steps still pending (all need you, an account, or a device)
+
+### A. First build and smoke test (do this first, everything else depends on it)
+1. `npm install --legacy-peer-deps`
+2. Connect an Android phone (USB debugging) or start an emulator, then `npx expo run:android`.
+3. **Expect to fix build errors in `android/.../SmsModule.kt`**: it was written but never compiled. Send me the Gradle error and I will fix it.
+4. Confirm the app opens, onboarding runs, and the DB creates without a "Database setup error" in logs. If `jsi: true` causes build trouble, remove it in `src/db/index.js` (comment is there).
+5. Existing installs of the old v1 build: uninstall first, or the v1 to v2 migration runs on real data (it is tested for shape only).
+
+### B. Device test pass (tick the boxes in section 6)
+- SMS: on an emulator use *Extended controls > Phone > SMS* with a sender like `VM-HDFCBK` and text `Rs.250.00 debited from A/c XX1234 to SWIGGY on 12-10-26`. On a real phone, ask a friend or use your bank's real alerts. Test with the app in foreground, background and killed (killed = appears after next launch).
+- Onboarding permission flows: allow, deny, deny with "don't ask again" (should offer app settings).
+- History import from the chosen start date; re-run from Settings, no duplicates.
+- Unknown payee flow: Home > Needs attention > Save rule, then past matching transactions update.
+- Voice entry (needs a device with Google speech services), manual entry, merge into "SMS verified".
+- Receipt camera: capture, thumbnail, full view, replace.
+- Ledger: swipe actions, delete + undo, category change with "apply to all", filters, a seeded set of 500+ transactions for scroll performance.
+- Accounts: add account with last-4 and confirm SMS attribute to it; reconcile; credit card at 80%/95% (check the notification); subscription track/pause/delete and the 3-day reminder notification.
+- Exports: CSV, JSON and PDF open from the share sheet; open the CSV in a spreadsheet and check names containing commas.
+- Android 13+ notification permission prompt appears and reminders fire.
+
+### C. Google Play Console (needs your developer account)
+1. Create the app listing (package `com.decanode.outspend`) and an internal testing track.
+2. Create subscription product **`com.decanode.outspend.premium_monthly`**, price ₹299/month; add your Google account as a license tester.
+3. Test purchase, restore, cancel and an expired state on an internal-track build (billing cannot be tested from a plain debug APK).
+4. **Permissions Declaration Form** for `READ_SMS` / `RECEIVE_SMS` (core functionality: expense tracking from bank SMS). Prepare a short screen recording of the feature. Without approval the app will be rejected.
+5. Data safety form (data stays on device; SMS read locally; no data shared), privacy policy URL, content rating, store listing, screenshots.
+6. If you pick D3 "tie trial to Play", add a 30-day free trial offer to the subscription.
+
+### D. Release configuration
+1. Decide D1-D4 above, then I update the code.
+2. Set `FEATURES.enforcePaywall = true` in `src/config.js` for the production build (only after step C2-C3 work).
+3. `npx eas-cli@latest login`, then `npx eas-cli@latest build:configure` if prompted; create/upload the signing key (EAS can generate it).
+4. `npx eas-cli@latest build --platform android --profile production` (AAB) and upload to the Play internal track; `--profile preview` gives an installable APK for friends.
+5. Review launcher icon and splash artwork in `assets/` and `android/app/src/main/res/` (the splash is still the starter image).
+6. Bump `versionCode`/`version` for each upload (EAS can auto-increment).
+7. Optional: `npx expo-doctor` shows two informational warnings (committed `android/` means `app.json` is not synced by EAS; WatermelonDB/react-native-fs lack New-Architecture metadata). They are expected; tell me if the New Architecture causes runtime problems and I will look at alternatives.
+
+### E. Gmail (only when you want it back, Phase 5)
+1. Google Cloud project, enable Gmail API, OAuth consent screen, create an Android client (SHA-1 of the signing key) and a web client.
+2. Put the web client ID in `src/services/GoogleAuth.js`; add the sign-in step back to onboarding and Settings.
+3. Submit for Google's restricted-scope verification (and possible security assessment) before public release.
+4. Tell me to resume P2-1.
+
+### F. Repo housekeeping
+- Review and merge the PR from `feat/implementation` into `main` (D10).
+- Confirm the docs you validated against (`docs/Expense Tracker Design Document_2.pdf`, `docs/UI design.html`) should be committed; they are not in the repo.
