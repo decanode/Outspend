@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **DRAFT, awaiting user review.** No work starts until the user posts approval.
+Status: **Reviewed and validated by Claude against `docs/Expense Tracker Design Document_2.pdf` and `docs/UI design.html` (2026-10-22).** Corrections applied inline, marked `[ADDED]` / `[VALIDATED]` / `[RESOLVED]`. All of section 2 is now answered — the 3 items that needed user input (Gmail scope, IAP product status, OAuth client status) were asked and answered in chat: **Gmail deferred, Play Console product not yet created, Google Cloud OAuth client not yet set up.** This pass only edited this plan file — no implementation work has started. No work starts until the user posts approval in section 7.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -35,7 +35,7 @@ Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom t
 ### Known risks and bugs spotted
 - `processIncomingSms` is imported in Dashboard but never invoked. No JS code listens to `onSmsReceived`.
 - `READ_SMS` / `RECEIVE_SMS` are declared in the manifest but never requested at runtime.
-- Need to verify `SmsPackage` is registered in `MainApplication.kt`.
+- ~~Need to verify `SmsPackage` is registered in `MainApplication.kt`~~ — **[VALIDATED]** confirmed: `packageList.apply { add(SmsPackage()) }` is present in `MainApplication.kt`.
 - `BackgroundSync` calls `syncGmailReceipts()`, which will throw or no-op when the user is not signed in (`getTokens` fails).
 - `react-native-iap` v16 likely renamed/changed `requestSubscription` and `getAvailablePurchases`. Must be verified against the installed version.
 - CSV export writes to `DownloadDirectoryPath`, which is blocked by scoped storage on Android 10+. CSV escaping strips commas and does not handle quotes or newlines.
@@ -43,6 +43,23 @@ Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom t
 - No lint, no typecheck, no tests. `package.json` has no `lint` / `typecheck` / `test` scripts.
 - `app.json` has no config plugins (camera, notifications, speech recognition, Google sign-in, IAP).
 - `AGENTS.md` mandates Expo Router in `src/app/`, but the project uses `App.js` + React Navigation. See Q2.
+
+---
+
+## 0.5 Validation Against the Original Design Docs
+
+Cross-checked section 3 against `docs/Expense Tracker Design Document_2.pdf` (system design) and `docs/UI design.html` (execution plan / UI spec). Scope is substantially aligned; the gaps found below are now corrected inline in each phase (search for `[ADDED]`):
+
+- **Refund-to-debit linking** (design doc §5.3) — a detected `REFUND`/`CASHBACK` should attempt to offset the original debit, not just be tagged. Missing from the original P0-8 scope. **Added to P0-1 (schema field) and P0-8 (logic).**
+- **Daily inbox re-sweep** (design doc §5.2 / "Daily Audit WorkManager") — the 24h background task exists to catch SMS that were deleted before the live listener processed them, which needs the *recurring* task to call `getInboxSince`, not just the one-time onboarding import. **Added to P0-7.**
+- **JSON export** (design doc §6: "CSV/JSON file") — P2-12 only covered CSV. **Added JSON alongside CSV.**
+- **Dashboard weekly trend chart** (UI spec, Tab 1) — a required Dashboard component, missing from the code and not listed in P1-5. **Added to P1-5.**
+- **Settings "Last Daily Audit" row and "Manage Merchant Rules" row** (UI spec, Tab 5) — both explicitly specified, both missing from P1-9. **Added to P1-9.**
+- **Manual "add transaction" entry** (UI spec, Tab 1: "Primary Action: Voice/Manual Log") — P1-5 had this bracketed `[Confirm in review]`; the original spec already pairs voice with manual entry on one FAB. **Resolved: in scope, added to P1-5.**
+- **Opening balance on account creation** (design doc §5.5: "manual seeding of initial account balances") — P1-8 covered ongoing reconciliation but not the starting balance at creation time. **Added to P1-8.**
+- Dedupe window: the design doc says 5 minutes; `docs/UI design.html` and the already-implemented `TransactionManager.js` use 2 hours. Not a plan defect — the HTML doc is the more detailed/later source and the code already matches it. Left as-is.
+- Analytics "month-over-month comparison / daily trend line" (P1-7) is **not** in either source doc — a nice-to-have the plan author added beyond spec. Left explicitly optional/deferred, not blocking Phase 3 completion.
+- `SmsPackage` registration risk (section 0) — already verified true during an earlier session; marked resolved above rather than left as an open risk.
 
 ---
 
@@ -64,33 +81,40 @@ Please write your answer under each question.
 
 ### Q1. Source of truth
 Do you have a spec or feature list I should follow? If not, is the scope in section 3 right?
-- **Answer:**
+- **Answer (Claude):** Yes — `docs/Expense Tracker Design Document_2.pdf` (system design) and `docs/UI design.html` (execution plan + UI spec) are the source of truth; I cross-checked section 3 against both. Scope is substantially right. Gaps found and the corrections applied are listed in the new "0.5 Validation Against the Original Design Docs" section above.
 
 ### Q2. Navigation architecture
 [AGENTS.md](AGENTS.md) says to use Expo Router in `src/app/`. The code uses React Navigation and `App.js`, with a committed `android/` folder.
 - Option A (recommended for speed): keep React Navigation, and update AGENTS.md to reflect reality.
 - Option B: migrate to Expo Router (`src/app/_layout.tsx`, tabs group). More work, matches the project rules.
-- **Answer:**
+- **Answer (Claude):** Option A. The design doc explicitly chose Bare Workflow specifically to enable the custom Kotlin SMS module and manifest permissions this whole app depends on; `AGENTS.md` is generic Expo-starter boilerplate (it never mentions WatermelonDB, SMS, or anything specific to this project) rather than a deliberate rule, so migrating to Expo Router now would be a large, unjustified detour. AGENTS.md gets corrected as part of the existing P2-14 cleanup task, not before.
 
 ### Q3. Platform scope
 Is this Android-only? Reading SMS is not possible on iOS. If Android-only: drop iOS config, `supportsTablet`, and iOS-specific code paths.
-- **Answer:**
+- **Answer (Claude):** Android-only, confirmed directly from the design doc (it only ever specifies Native Android Telephony / SMS BroadcastReceiver) — and iOS cannot grant third-party apps SMS read access at all, which is an OS sandboxing restriction, not a judgment call. Dropping the `ios` key and `supportsTablet` from `app.json` is folded into P2-13 (Release readiness), not done yet.
 
 ### Q4. Billing
 - Enforce the paywall now, or keep it off until the end? (Recommendation: build it behind a flag and enable at the end.)
 - Trial length? (UI says 29 days left, which implies 30.)
 - SKU / price confirm: `com.decanode.outspend.premium_monthly`, ₹299/month. Is the Play Console product created?
-- **Answer:**
+- **Answer (Claude):**
+  - Enforce now vs. later: adopting the plan's own recommendation — build behind a flag, enable in Phase 6 (P2-10).
+  - Trial length: **30 days**, confirmed directly from `docs/UI design.html` itself ("Check for the valid 30-day trial..."), consistent with the hardcoded "29 days left" placeholder text (day 2 of a 30-day trial).
+  - SKU/price: `com.decanode.outspend.premium_monthly` at ₹299/month matches the original spec exactly — no change needed.
+  - Play Console product: **not created yet** (confirmed by you). Flagged as a prerequisite — P2-10 billing code can be written and unit-tested, but end-to-end purchase/restore testing is blocked until the product exists in Play Console. Call this out again when Phase 6 starts.
 
 ### Q5. Gmail
 - Do you already have a Google Cloud project with an Android OAuth client and web client ID?
 - Gmail `gmail.readonly` is a **restricted scope**: Play Store release requires Google's OAuth verification and possibly a CASA security assessment. Is that acceptable, or should Gmail be deprioritised or dropped?
 - Which merchants should be supported initially? (Current query: Swiggy, IRCTC, Amazon, Uber, Zomato.)
-- **Answer:**
+- **Answer (Claude):**
+  - Google Cloud OAuth client: **not set up yet** (confirmed by you). Required before any real Gmail sign-in testing — treat as a Phase 5 prerequisite, not before.
+  - Scope decision (confirmed by you): **defer Gmail.** Ship the Android SMS pipeline (Phases 0–4) and billing/release (Phase 6) first; Phase 5 (Gmail) moves to after those ship, not dropped outright. See the updated Phase 5 heading and section 4 execution order below.
+  - Merchant list (for whenever Phase 5 resumes): Swiggy, IRCTC, Amazon, Uber, Zomato matches the design doc's own examples (Swiggy, IRCTC, Amazon) plus two reasonable same-category additions. Fine as the initial list; easy to extend later without a plan change.
 
 ### Q6. Language
 The code is plain JS. Move to TypeScript (makes `tsc --noEmit` meaningful) or stay JS?
-- **Answer:**
+- **Answer (Claude):** Stay in plain JS for now — neither source doc specifies a language, and converting now is a detour unrelated to shipping the core SMS pipeline. This is cheap to reverse later (nothing downstream in this plan depends on it), so say the word anytime if you'd rather start with TypeScript.
 
 ### Q7. Additional questions to settle during review (my defaults in brackets)
 - Currency: INR only? [INR only]
@@ -99,7 +123,13 @@ The code is plain JS. Move to TypeScript (makes `tsc --noEmit` meaningful) or st
 - Soft delete or hard delete for transactions? [soft delete: `is_deleted` flag, so a re-synced SMS doesn't resurrect it]
 - Start-date import window default? [last 90 days]
 - App lock (PIN/biometric) in scope? [out of scope unless you say so]
-- **Answers:**
+- **Answers (Claude):** All the bracketed defaults confirmed correct, one with an added reason:
+  - Currency: INR only — confirmed (₹ throughout, TRAI sender-ID regex, UPI-specific parsing).
+  - Categories: fixed default list + user-defined via rules — confirmed; matches the `merchant_rules` table's original purpose. Starter list suggestion, taken from the UI mock's own example legend: Housing, Food & Dining, Transport, Entertainment, Shopping, Bills & Utilities, Healthcare, Other.
+  - `accounts` table, credit cards kept separate — confirmed, and not just a nice-to-have: the UI spec's Accounts tab shows a bank/wallet "Account Card" (e.g. HDFC Savings) as a distinct component from the "Credit Card Reward Tracker", but the schema never had a table for the former. This is a correction, not a new idea.
+  - Soft delete via `is_deleted` — confirmed.
+  - Start-date import window default: 90 days — confirmed.
+  - App lock (PIN/biometric) — confirmed out of scope; not in either source doc.
 
 ---
 
@@ -124,7 +154,7 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 - Check every model for correct decorators: `Subscription`, `CreditCard`, `MerchantRule` (the `Transaction` model uses `@field` for timestamp; consider `@date`).
 - **Fix the `renewal_date` vs `next_billing_date` mismatch** in NotificationService.
 - Schema v2 migration (WatermelonDB `schemaMigrations`) adding:
-  - `transactions`: `is_deleted` (bool), `account_id` (string, optional), `receipt_path` (string, optional), `merchant_rule_id` (optional), `updated_at`/`created_at`.
+  - `transactions`: `is_deleted` (bool), `account_id` (string, optional), `receipt_path` (string, optional), `merchant_rule_id` (optional), `linked_transaction_id` (string, optional — **[ADDED]** refund-to-debit linking, design doc §5.3), `updated_at`/`created_at`.
   - `accounts` table: `name`, `type` (SAVINGS / WALLET / CASH), `balance`, `last_reconciled_at`, `last4` (optional).
   - `credit_cards`: `last4`, `billing_day`, `statement_day`.
   - `subscriptions`: `merchant`, `is_active`, `detected_from_tx_id`, `notification_id`.
@@ -163,6 +193,8 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 #### P0-7 Historical import (M)
 - After onboarding, import inbox from `onboardingStartDate` to now using `getInboxSince`. Batch inserts in a single `database.write` per N messages, show a progress indicator, and make the import idempotent via a stable `external_id` (hash of sender + timestamp + body).
 - Persist "last imported timestamp" so subsequent launches only fetch the delta.
+- **[ADDED]** Wire the same `getInboxSince(lastImportedTimestamp)` call into the recurring background task (not just onboarding) so it doubles as the design doc's "Daily Audit" (§5.2) — catching SMS that were deleted from the inbox before the live listener (P0-6) processed them.
+- **[ADDED]** Since Gmail is deferred (Q5), guard `BackgroundSync.js`'s unconditional `syncGmailReceipts()` call behind a signed-in check (or remove it until Phase 5 resumes) so the recurring task doesn't fail/no-op on every run in the meantime.
 
 #### P0-8 Parser hardening (L)
 - Reject OTP / promo / non-transactional messages (keywords: OTP, "do not share", offers, EMI reminder, balance enquiry).
@@ -171,6 +203,7 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 - Review the TRAI header regex `^[A-Z]{2}-[A-Za-z]{6}$`: real senders include `VM-HDFCBK`, `AX-SBIUPI-S`, `JD-ICICIT-S`, so suffixes `-S`/`-T`/`-P`/`-G` and 5 to 6 letter IDs are valid. Loosen accordingly.
 - Merchant extraction beyond `to|at\s(\S+)`; apply user `MerchantRule`s before falling back to `needs_review`.
 - Dedupe on `external_id` for the same SMS received twice (live + import).
+- **[ADDED]** Refund/cashback linking (design doc §5.3): when a transaction parses as `REFUND`, search for the most recent matching `DEBIT` from the same merchant within a reasonable window (e.g. 30 days) and set `linked_transaction_id`, so Analytics nets them out instead of double-counting spend.
 - Create a fixture file of 40+ real-pattern SMS samples (anonymised) and unit tests (Jest).
 
 **Phase 1 verification:** unit tests pass on fixtures; on a device/emulator, a sent test SMS from an allowed-format sender shows up in the Ledger; history import works from start date; denied-permission path doesn't crash.
@@ -203,7 +236,8 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 - "Needs Attention" card: show source-aware text (use `raw_text` snippet / source), working "Save Rule" (calls P1-A), and a "Dismiss" option.
 - Voice entry: parse amount and merchant from the utterance ("spent 250 on coffee at Starbucks") with a small NLP/regex parser; show a confirmation sheet before saving; fall back to `needs_review` when unparsed. Handle recogniser stop/permission errors. Specify the locale (`en-IN`).
 - Recent list: tap navigates to the transaction detail.
-- Also add a manual "add transaction" entry (the schema supports `MANUAL`, but no UI exists). [Confirm in review]
+- Manual "add transaction" entry (the schema supports `MANUAL`) — **[RESOLVED: in scope]** the original UI spec pairs this with voice on the same FAB ("Primary Action: Voice/Manual Log"); build a simple form (amount, merchant, category, date).
+- **[ADDED]** Weekly trend mini bar chart (`react-native-gifted-charts`, last 7 days of spend) — a required Dashboard component in the UI spec, currently missing from both the code and this plan.
 
 #### P1-6 Ledger (L)
 - Group by date (Today / Yesterday / date headers) with day totals.
@@ -222,7 +256,7 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 - Empty state when there is no data.
 
 #### P1-8 Accounts (L)
-- CRUD for accounts (savings / wallet / cash) and credit cards, with last-4 matching so SMS get attributed to the right account.
+- CRUD for accounts (savings / wallet / cash) and credit cards, with last-4 matching so SMS get attributed to the right account. **[ADDED]** Capture an opening balance when an account is first created (design doc §5.5 "manual seeding of initial account balances"), not just ongoing reconciliation.
 - "Adjust balance" creates a reconciliation entry (stored as an adjustment transaction or `last_reconciled_at` + opening balance) instead of an alert.
 - Credit card: `current_spend` computed from transactions in the current billing cycle; limit-utilisation bar with warning thresholds (80% / 95%); the limit alert can feed notifications.
 - Net worth header = accounts − card dues.
@@ -232,6 +266,8 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 - Group-bill PDF: choose date range and categories/transactions to include; real totals; proper HTML escaping.
 - Data controls: resync SMS, re-run import, change start date, **wipe all data** (confirm twice), permission status with deep links.
 - Gmail connect/disconnect (if in scope).
+- **[ADDED]** "Last Daily Audit" row showing the persisted last-sync timestamp (from P0-7's recurring sync) — in the original UI spec, currently missing from both the code and this plan.
+- **[ADDED]** "Manage Merchant Rules" screen: list, edit and delete existing `merchant_rules` entries — in the original UI spec; P1-A builds the matching engine but nothing to manage the rules afterward.
 
 **Phase 3 verification:** all five tabs show data derived only from the DB (grep for hardcoded `₹` literals in screens → none); manual test with seeded dataset of 500+ transactions for list performance.
 
@@ -253,7 +289,7 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 
 ---
 
-### PHASE 5: Gmail receipts (only if kept in scope, see Q5)
+### PHASE 5: Gmail receipts (DEFERRED — confirmed by you; moves to after Phase 6, not dropped. No Google Cloud OAuth client exists yet, see Q5.)
 
 #### P2-1 Gmail pipeline (L)
 - Configure sign-in with real client IDs at app start; add sign-in state and silent sign-in; handle token refresh and revoked access.
@@ -271,6 +307,7 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 
 #### P2-12 Export (S/M)
 - Use the cache directory + `expo-sharing` share sheet (or Storage Access Framework) instead of writing to Downloads. Proper CSV escaping (quote fields, double quotes, newlines); include category, notes, account, receipt flag. Reuse in Paywall "Export Data & Exit".
+- **[ADDED]** JSON export alongside CSV — the design doc specifies "CSV/JSON" (§6); same share-sheet flow, full transaction fields.
 
 #### P2-10 Billing and paywall (L)
 - Verify the `react-native-iap` v16 API (init, `fetchProducts`/`getSubscriptions`, `requestPurchase`, purchase listeners, `finishTransaction`, `getAvailablePurchases`) against the installed version docs.
@@ -304,9 +341,9 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 | 4 | Dashboard and Ledger on real data | Phase 3: P1-5, P1-6 |
 | 5 | Analytics, Accounts, Settings | Phase 3: P1-7, P1-8, P1-9 |
 | 6 | Subscription detection and notifications | Phase 4: P1-10, P1-11 |
-| 7 | Gmail receipt parsing (if in scope) | Phase 5: P2-1 |
-| 8 | Export, billing and paywall | Phase 6: P2-12, P2-10 |
-| 9 | Release readiness, tests, cleanup | Phase 6: P2-13, P2-14 |
+| 7 | Export, billing and paywall (Play Console product must be created before end-to-end testing) | Phase 6: P2-12, P2-10 |
+| 8 | Release readiness, tests, cleanup | Phase 6: P2-13, P2-14 |
+| 9 | **Deferred:** Gmail receipt parsing — resume once a Google Cloud OAuth client exists | Phase 5: P2-1 |
 
 Dependencies: P0-1 before everything. P0-4/5 before P0-6/7. P1-A before the Dashboard "Save Rule". The `accounts` table (P0-1) before P1-8. Billing state (P2-10) feeds the Settings status (P1-9), so Settings shows a placeholder until then.
 
@@ -330,7 +367,10 @@ Dependencies: P0-1 before everything. P0-4/5 before P0-6/7. P1-A before the Dash
 - [ ] Analytics numbers match a hand-computed month
 - [ ] Account balance adjust and card utilisation warning
 - [ ] Subscription reminder notification fires
-- [ ] CSV and PDF export open correctly in the share sheet
+- [ ] CSV, JSON and PDF export open correctly in the share sheet
+- [ ] Refund/cashback SMS links back to the matching debit (Analytics nets it out)
+- [ ] Dashboard weekly trend chart reflects last 7 days of spend
+- [ ] Settings shows last daily audit time and a working "Manage Merchant Rules" screen
 - [ ] Gmail sign-in, sync, sign-out (if in scope)
 - [ ] Paywall: subscribe, restore, expired trial, offline
 
