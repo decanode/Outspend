@@ -1,11 +1,5 @@
 package com.decanode.outspend
 
-import android.Manifest
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.os.Build
 import android.provider.Telephony
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -13,53 +7,12 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableMap
-import com.facebook.react.modules.core.DeviceEventManagerModule
 
+/**
+ * Inbox access for the history import and delta sync. Live messages are delivered by the
+ * manifest-declared [SmsReceiver] instead, so they also work when the app is closed.
+ */
 class SmsModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-
-    private var receiverRegistered = false
-
-    private val smsReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
-            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
-
-            // A long SMS arrives as several PDUs in one intent: stitch them back together per sender.
-            val bodies = LinkedHashMap<String, StringBuilder>()
-            val stamps = HashMap<String, Long>()
-            for (sms in messages) {
-                val address = sms.displayOriginatingAddress ?: continue
-                bodies.getOrPut(address) { StringBuilder() }.append(sms.displayMessageBody ?: "")
-                if (!stamps.containsKey(address)) stamps[address] = sms.timestampMillis
-            }
-
-            for ((address, body) in bodies) {
-                val params: WritableMap = Arguments.createMap()
-                params.putString("sender", address)
-                params.putString("body", body.toString())
-                params.putDouble("timestamp", (stamps[address] ?: System.currentTimeMillis()).toDouble())
-                sendEvent("onSmsReceived", params)
-            }
-        }
-    }
-
-    init {
-        registerSmsReceiver()
-    }
-
-    private fun registerSmsReceiver() {
-        if (receiverRegistered) return
-        val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
-        // Only the system (holder of BROADCAST_SMS) may deliver to this receiver.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            reactApplicationContext.registerReceiver(
-                smsReceiver, filter, Manifest.permission.BROADCAST_SMS, null, Context.RECEIVER_EXPORTED
-            )
-        } else {
-            reactApplicationContext.registerReceiver(smsReceiver, filter, Manifest.permission.BROADCAST_SMS, null)
-        }
-        receiverRegistered = true
-    }
 
     override fun getName(): String = "SmsModule"
 
@@ -98,31 +51,5 @@ class SmsModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaMod
         } catch (e: Exception) {
             promise.reject("E_SMS_QUERY", e.message, e)
         }
-    }
-
-    // Required by NativeEventEmitter-style listeners; events go through DeviceEventEmitter.
-    @ReactMethod
-    fun addListener(eventName: String) {}
-
-    @ReactMethod
-    fun removeListeners(count: Int) {}
-
-    private fun sendEvent(eventName: String, params: WritableMap?) {
-        if (!reactApplicationContext.hasActiveReactInstance()) return
-        reactApplicationContext
-            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-            .emit(eventName, params)
-    }
-
-    override fun invalidate() {
-        if (receiverRegistered) {
-            try {
-                reactApplicationContext.unregisterReceiver(smsReceiver)
-            } catch (_: IllegalArgumentException) {
-                // already unregistered
-            }
-            receiverRegistered = false
-        }
-        super.invalidate()
     }
 }

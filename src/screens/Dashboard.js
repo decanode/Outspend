@@ -8,9 +8,8 @@ import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { VoiceService } from '../services/VoiceService'
 import { parseVoiceExpense } from '../services/VoiceParser'
 import { aggregateSpend, accountBalance, dailySpend, monthBounds, formatINR } from '../services/Analytics'
-import { keywordCategory, suggestPattern } from '../services/RuleEngine'
 import { observeNeedsReview, observeRecentTransactions, createTransaction, updateTransaction } from '../data/transactions'
-import { createRule } from '../data/rules'
+import { nameUnknownTransaction } from '../data/naming'
 import { toPlain, col } from '../data/util'
 import { Field, Button, Chip, EmptyState, SectionTitle, screenStyles } from '../components/ui'
 import CategoryPicker from '../components/CategoryPicker'
@@ -25,16 +24,9 @@ const NeedsAttentionCard = ({ transaction: tx }) => {
   const [picking, setPicking] = useState(false)
 
   const save = async () => {
-    const merchant = name.trim()
-    if (!merchant) return Alert.alert('Enter a name', 'Who was this payment to?')
-    const cat = category || keywordCategory(merchant)
-    const pattern = suggestPattern(tx)
-    if (pattern) {
-      const { updated } = await createRule({ pattern, mapped_merchant: merchant, category: cat })
-      if (updated > 1) Alert.alert('Rule saved', `${updated} matching transactions updated.`)
-    } else {
-      await updateTransaction(tx, { merchant, category: cat, needs_review: false })
-    }
+    if (!name.trim()) return Alert.alert('Enter a name', 'Who was this payment to?')
+    const updated = await nameUnknownTransaction(tx, name, category)
+    if (updated > 1) Alert.alert('Rule saved', `${updated} matching transactions updated.`)
   }
 
   const mode = tx.payment_mode ? ` via ${tx.payment_mode}` : ''

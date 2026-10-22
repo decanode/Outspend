@@ -26,7 +26,7 @@ const lightweight = (m) => ({
  * user deleted is never resurrected by a later re-import.
  */
 export const ingestMessages = async (messages, { onProgress } = {}) => {
-  if (!messages.length) return { created: 0, merged: 0, skipped: 0 }
+  if (!messages.length) return { created: 0, merged: 0, skipped: 0, needsReview: [] }
 
   const minTs = Math.min(...messages.map(m => m.timestamp))
   const maxTs = Math.max(...messages.map(m => m.timestamp))
@@ -91,7 +91,11 @@ export const ingestMessages = async (messages, { onProgress } = {}) => {
     }
   })
 
-  return { created: plan.creates.length, merged: plan.updates.length, skipped: plan.skipped }
+  const needsReview = plan.creates
+    .filter(d => d.needs_review)
+    .map(d => ({ id: idByTemp.get(d.tempId), amount: d.amount, type: d.type, payment_mode: d.payment_mode }))
+
+  return { created: plan.creates.length, merged: plan.updates.length, skipped: plan.skipped, needsReview }
 }
 
 /** Live path: one message from the broadcast receiver. */

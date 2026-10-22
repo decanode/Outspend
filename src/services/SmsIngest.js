@@ -1,9 +1,9 @@
-import { getInboxPage, subscribeToSms, isSmsAvailable } from '../native/Sms'
+import { getInboxPage, isSmsAvailable } from '../native/Sms'
 import { ingestMessages } from './TransactionManager'
 import { hasSmsPermission } from './Permissions'
 import { getSettings, updateSettings, DEFAULT_IMPORT_DAYS } from './Settings'
 import { isTransactionalSender } from './RegexEngine'
-import { checkCardLimits } from './NotificationService'
+import { checkCardLimits, notifyNeedsName } from './NotificationService'
 
 const PAGE_SIZE = 500
 
@@ -74,20 +74,24 @@ export const syncInbox = async () => {
   return totals
 }
 
-/** Start the live listener. Returns a function that stops it. */
-export const startLiveSmsListener = () =>
-  subscribeToSms((msg) => {
-    if (!msg || !isTransactionalSender(msg.sender)) return
-    enqueue(async () => {
-      try {
-        const r = await ingestMessages([msg])
-        if (r.created || r.merged) {
-          const s = await getSettings()
-          await updateSettings({ lastImportedTimestamp: Math.max(msg.timestamp, s.lastImportedTimestamp || 0) })
-          checkCardLimits().catch(() => {})
-        }
-      } catch (e) {
-        console.error('Live SMS ingest failed', e)
-      }
-    })
+/**
+ * Handle one SMS that just arrived. Called by the headless task, which Android starts for
+ * every incoming SMS, whether the app is open, in the background or closed.
+ * Saves the transaction immediately; unknown payees trigger a "who was this to?" notification.
+ */
+export const handleIncomingSms = (msg) =>
+  enqueue(async () => {
+    if (!msg || !isTransactionalSender(msg.sender)) return null
+    const settings = await getSettings()
+    if (!settings.isOnboarded) return null
+
+    const r = await ingestMessages([msg])
+    if (r.created || r.merged) {
+      await updateSettings({ lastImportedTimestamp: Math.max(msg.timestamp, settings.lastImportedTimestamp || 0) })
+      await checkCardLimits().catch(e => console.error('Card limit check failed', e))
+    }
+    for (const tx of r.needsReview) {
+      await notifyNeedsName(tx).catch(e => console.error('Could not send notification', e))
+    }
+    return r
   })

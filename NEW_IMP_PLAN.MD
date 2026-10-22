@@ -416,6 +416,12 @@ All coding for Phases 0-4 and 6 is done. Verified here: `npm test` (129 tests, i
 | P2-14 Tests/docs | Done | README, AGENTS.md corrected. |
 | P2-1 Gmail | Deferred | unchanged, per Q5. |
 
+### Update: instant capture + "who was this to?" notification (implemented, awaiting device test)
+- A manifest-declared `SmsReceiver` (Kotlin) fires for every incoming SMS, even with the app closed, and starts `SmsHeadlessTaskService`, which runs the JS task `SmsReceivedTask` (registered in `index.js`). The transaction is saved immediately.
+- If the payee is unknown, an immediate notification appears: "₹250 paid via UPI. Who was this to?" with a **Name it** reply box. The reply saves a merchant rule (so the next payment is recognised and past ones are fixed) or, with no stable pattern, just renames that transaction. Tapping the notification body opens Home where the Needs-attention card is waiting.
+- The old in-process listener was removed (one capture path only). The delta sync on launch/resume and the daily task stay as safety nets.
+- 133 tests pass (4 new ones cover the naming flow). The Kotlin and the notification reply have not run on a device.
+
 ### What is implemented (summary)
 - **Data and logic (Phases 0-1):** schema v2 + migration, accounts table, persisted settings, data-access layer, hardened SMS parser (45 fixtures), idempotent ingest (live, history import, daily audit), refund linking, merchant rules, analytics, subscription detection, notifications, trial/billing logic, export formatters.
 - **UI (Phases 2-4):** functional onboarding; Dashboard, Ledger, Analytics, Accounts (with subscriptions), Settings (with rules manager); receipt camera on VisionCamera v5; voice entry on the current speech API.
@@ -434,11 +440,13 @@ Defaults are what is in the code now. Reply with your choice (or edit this file)
 | D1 | **Cloud backup of the database** | `allowBackup="false"`: data never leaves the phone, but nothing restores on a new phone (user must export first) | `true`: automatic restore via Google backup, but the finance DB is copied to the user's Google Drive, which weakens the "100% private" promise |
 | D2 | **When to turn the paywall on** | Off (`enforcePaywall: false`); trial tracked and shown in Settings | Turn on for the production build once the Play product exists. Needs your go-ahead at release time |
 | D3 | **Trial reset by reinstall** | Trial start is stored locally, so clearing data/reinstalling restarts it | Accept (matches the privacy-first design), or tie the trial to Play (needs a free-trial offer on the subscription in Play Console) |
-| D4 | **Killed-app SMS capture** | No manifest receiver; SMS received while the process is dead are imported on next launch/resume and by the daily task | Add a manifest receiver + foreground/worker service for true real-time capture: more code, battery and Play policy risk |
+| D4 | ~~Killed-app SMS capture~~ **DECIDED (you chose: wake the app on SMS)** | Implemented: manifest `SmsReceiver` -> headless JS task, works while closed. Fallback to delta sync if the OS refuses the background start | Still needs device testing, especially on phones with aggressive battery savers |
 | D5 | **Backdated entries vs reconciliation** | After you reconcile a balance, only transactions dated after that moment affect it | Alternative: store an explicit adjustment transaction so older-dated edits also shift the balance |
 | D6 | **Gmail receipts** | Deferred, stub left untouched | Needs an OAuth client and Google's restricted-scope review; confirm if/when to resume (Phase 5) |
 | D7 | **Subscriptions location** | A section in the Accounts tab | Could be its own tab or a Settings screen |
-| D8 | **Optional extras** | Not built: daily trend line in Analytics, daily "needs review" digest notification | Say which (if any) you want |
+| D8 | **Optional extras** | Not built: daily trend line in Analytics. (The per-transaction "who was this to?" notification you asked for IS built.) | Say if you still want the trend line or a daily digest |
+| D11 | **UPI app notifications** | **DECIDED: bank SMS only** (not reading GPay/PhonePe/Paytm) | Reconsider only if you find real payments with no bank SMS |
+| D12 | **Notification reply opens the app** | Typing a name in the notification saves it but also brings the app to the front (the reliable way to deliver the text) | Silent background reply is possible only when the app process is alive; can be tried after device testing |
 | D9 | **Language** | Plain JS (Q6) | TypeScript migration can be done later without blocking anything |
 | D10 | **Push/merge** | Work is on branch `feat/implementation`, pushed for review | Open a PR and merge to `main` when you are happy |
 
@@ -455,6 +463,8 @@ Defaults are what is in the code now. Reply with your choice (or edit this file)
 
 ### B. Device test pass (tick the boxes in section 6)
 - SMS: on an emulator use *Extended controls > Phone > SMS* with a sender like `VM-HDFCBK` and text `Rs.250.00 debited from A/c XX1234 to SWIGGY on 12-10-26`. On a real phone, ask a friend or use your bank's real alerts. Test with the app in foreground, background and killed (killed = appears after next launch).
+- **Instant capture (new):** with the app fully closed (swipe it away), send/receive a bank-format SMS. Expect the transaction to appear without opening the app (check the Ledger afterwards) and, for an unknown payee, a notification within a few seconds. Repeat with the phone idle/screen off and on a battery-saver mode.
+- **Reply box (new):** type a name in the notification's "Name it" box. Confirm the app opens, the transaction is renamed, and a second SMS to the same payee needs no prompt. Also test tapping the notification body, and replying when the app was killed.
 - Onboarding permission flows: allow, deny, deny with "don't ask again" (should offer app settings).
 - History import from the chosen start date; re-run from Settings, no duplicates.
 - Unknown payee flow: Home > Needs attention > Save rule, then past matching transactions update.

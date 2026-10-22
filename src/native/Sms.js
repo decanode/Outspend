@@ -1,4 +1,4 @@
-import { NativeModules, DeviceEventEmitter, Platform } from 'react-native'
+import { NativeModules, Platform } from 'react-native'
 
 const { SmsModule } = NativeModules
 
@@ -14,9 +14,5 @@ export const getInboxPage = async (sinceMs, limit = 500) => {
   return SmsModule.getInboxSince(sinceMs, limit)
 }
 
-/** Subscribe to live incoming SMS. Returns an unsubscribe function. */
-export const subscribeToSms = (callback) => {
-  if (!isSmsAvailable) return () => {}
-  const sub = DeviceEventEmitter.addListener('onSmsReceived', callback)
-  return () => sub.remove()
-}
+// Live messages are not delivered here: the manifest-declared SmsReceiver wakes the app and
+// runs the "SmsReceivedTask" headless task (see index.js and SmsHeadlessTask.js).

@@ -6,6 +6,7 @@ import { col, toPlain } from '../data/util'
 import { rollForward } from './SubscriptionDetector'
 import { cardSpend, cycleStart, utilisation, utilisationLevel, formatINR } from './Analytics'
 import { getSettings, updateSettings } from './Settings'
+import { nameTransactionById } from '../data/naming'
 
 const CHANNEL_ID = 'reminders'
 const REMINDER_LEAD_DAYS = 3
@@ -20,14 +21,32 @@ Notifications.setNotificationHandler({
   }),
 })
 
-/** Create the Android channel, then ask for permission. Returns whether it was granted. */
-export const initNotifications = async () => {
+// No ':' or '-' in category ids (expo-notifications limitation).
+const NEEDS_NAME_CATEGORY = 'needsvendor'
+const NAME_ACTION = 'NAME'
+
+/** Channel + the "who was this to?" reply action. Idempotent; also called from the SMS task. */
+export const ensureNotificationSetup = async () => {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
       name: 'Reminders & alerts',
       importance: Notifications.AndroidImportance.HIGH,
     })
   }
+  await Notifications.setNotificationCategoryAsync(NEEDS_NAME_CATEGORY, [
+    {
+      identifier: NAME_ACTION,
+      buttonTitle: 'Name it',
+      textInput: { submitButtonTitle: 'Save', placeholder: 'Who was this to?' },
+      // The reply is delivered to JS, which needs the app process; opening it is the reliable way.
+      options: { opensAppToForeground: true },
+    },
+  ])
+}
+
+/** Create the Android channel, then ask for permission. Returns whether it was granted. */
+export const initNotifications = async () => {
+  await ensureNotificationSetup()
   const current = await Notifications.getPermissionsAsync()
   if (current.granted) return true
   const req = await Notifications.requestPermissionsAsync()
@@ -120,4 +139,37 @@ export const refreshReminders = async () => {
     if (perm.granted) await scheduleSubscriptionReminder(sub)
   }
   if (perm.granted) await checkCardLimits()
+}
+
+/**
+ * Immediate notification for a transaction whose payee we could not work out. Tapping it
+ * opens the app (Needs attention card); the "Name it" action takes the name inline.
+ */
+export const notifyNeedsName = async (tx) => {
+  const perm = await Notifications.getPermissionsAsync()
+  if (!perm.granted) return null
+  await ensureNotificationSetup()
+  const incoming = tx.type === 'CREDIT' || tx.type === 'REFUND'
+  const mode = tx.payment_mode ? ` via ${tx.payment_mode}` : ''
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: `${formatINR(tx.amount)} ${incoming ? 'received' : 'paid'}${mode}`,
+      body: incoming ? 'Who was this from? Tap to name it.' : 'Who was this to? Tap to name it.',
+      categoryIdentifier: NEEDS_NAME_CATEGORY,
+      data: { transactionId: tx.id },
+    },
+    trigger: null,
+  })
+}
+
+/**
+ * Handle the user's reply from the notification. Returns true when it was a name reply.
+ */
+export const handleNotificationResponse = async (response) => {
+  if (!response || response.actionIdentifier !== NAME_ACTION) return false
+  const id = response.notification.request.content.data && response.notification.request.content.data.transactionId
+  const name = (response.userText || '').trim()
+  if (!id || !name) return false
+  await nameTransactionById(id, name)
+  return true
 }

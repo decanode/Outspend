@@ -19,8 +19,9 @@ import { loadSettings, updateSettings, resetSettings } from './src/services/Sett
 import { getAccessState, ensureTrialStarted } from './src/services/BillingService'
 // Importing BackgroundSync defines the background task at module scope, as the OS requires.
 import { registerBackgroundSync } from './src/services/BackgroundSync'
-import { refreshReminders } from './src/services/NotificationService'
-import { startLiveSmsListener, syncInbox } from './src/services/SmsIngest'
+import * as Notifications from 'expo-notifications'
+import { refreshReminders, ensureNotificationSetup, handleNotificationResponse } from './src/services/NotificationService'
+import { syncInbox } from './src/services/SmsIngest'
 import { hasSmsPermission } from './src/services/Permissions'
 
 const Tab = createBottomTabNavigator()
@@ -67,20 +68,32 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
-  // Everything that touches SMS only runs once the user has onboarded.
+  // Everything that touches SMS only runs once the user has onboarded. Live messages arrive
+  // through the SmsReceivedTask (index.js); here we only catch up on anything missed.
   useEffect(() => {
-    if (!isReady || !isOnboarded) return undefined
-    let stopListener = () => {}
+    if (!isReady || !isOnboarded) return
     ;(async () => {
       await registerBackgroundSync()
-      if (await hasSmsPermission()) {
-        stopListener = startLiveSmsListener()
-        await syncInbox() // catches anything that arrived while the app was closed
-      }
+      await ensureNotificationSetup()
+      if (await hasSmsPermission()) await syncInbox()
       await refreshReminders()
     })().catch(e => console.error('Startup tasks failed', e))
-    return () => stopListener()
   }, [isReady, isOnboarded])
+
+  // Replies typed into the "who was this to?" notification (live, or the one that launched the app).
+  useEffect(() => {
+    if (!isOnboarded) return undefined
+    const process = async (response) => {
+      try {
+        if (await handleNotificationResponse(response)) await Notifications.clearLastNotificationResponseAsync()
+      } catch (e) {
+        console.error('Notification reply failed', e)
+      }
+    }
+    Notifications.getLastNotificationResponseAsync().then(process)
+    const sub = Notifications.addNotificationResponseReceivedListener(process)
+    return () => sub.remove()
+  }, [isOnboarded])
 
   // Returning to the app: pick up missed SMS and re-check billing.
   useEffect(() => {

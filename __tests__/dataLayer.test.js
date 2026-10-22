@@ -9,6 +9,7 @@ import { createRule } from '../src/data/rules'
 import { createAccount, reconcileAccount, createCard, updateAccount } from '../src/data/accounts'
 import { accountBalance, cardSpend } from '../src/services/Analytics'
 import { toPlain } from '../src/data/util'
+import { nameUnknownTransaction, nameTransactionById } from '../src/data/naming'
 
 const T0 = Date.now() - 3600 * 1000
 const sms = (body, ts = T0, sender = 'VM-HDFCBK') => ({ sender, body, timestamp: ts })
@@ -117,5 +118,42 @@ describe('accounts', () => {
     expect(accountBalance(toPlain(acc), txs)).toBe(400)
     await reconcileAccount(acc, 1000)
     expect(accountBalance(toPlain(acc), txs)).toBe(1000)
+  })
+})
+
+describe('unknown vendors', () => {
+  const UNKNOWN = 'Rs.20 debited from A/c XX1234 on 1-1-26. Ref VPA chaiwala@ybl'
+
+  test('ingest reports new transactions that need a name', async () => {
+    const r = await ingestMessages([sms(UNKNOWN), sms('Paid Rs.100 to Swiggy on 1-1-26', T0 + 1000)])
+    expect(r.created).toBe(2)
+    expect(r.needsReview).toHaveLength(1)
+    const [item] = r.needsReview
+    expect(item).toMatchObject({ amount: 20, type: 'DEBIT' })
+    expect((await database.collections.get('transactions').find(item.id)).needs_review).toBe(true)
+  })
+
+  test('naming from a notification reply saves a rule and fixes the transaction', async () => {
+    const { needsReview } = await ingestMessages([sms(UNKNOWN)])
+    expect(await nameTransactionById(needsReview[0].id, '  Chai Point ')).toBe(1)
+    expect((await all())[0]).toMatchObject({ merchant: 'Chai Point', needs_review: false })
+    const rules = await database.collections.get('merchant_rules').query().fetch()
+    expect(rules).toHaveLength(1)
+    // the next payment to the same VPA is recognised with no prompt
+    const next = await ingestMessages([sms('Rs.30 debited from A/c XX1234 on 2-1-26. Ref VPA chaiwala@ybl', T0 + 5000)])
+    expect(next.needsReview).toHaveLength(0)
+  })
+
+  test('without a VPA only that transaction is renamed', async () => {
+    const tx = await createTransaction({ amount: 50, merchant: 'Unknown Vendor', type: 'DEBIT', needs_review: true })
+    expect(await nameUnknownTransaction(tx, 'Ramesh')).toBe(1)
+    expect(await database.collections.get('merchant_rules').query().fetch()).toHaveLength(0)
+    expect((await all())[0]).toMatchObject({ merchant: 'Ramesh', needs_review: false })
+  })
+
+  test('empty name or deleted transaction is a no-op', async () => {
+    const tx = await createTransaction({ amount: 50, merchant: 'Unknown Vendor', type: 'DEBIT', needs_review: true })
+    expect(await nameUnknownTransaction(tx, '   ')).toBe(0)
+    expect(await nameTransactionById('does-not-exist', 'X')).toBe(0)
   })
 })

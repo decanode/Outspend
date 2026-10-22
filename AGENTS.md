@@ -30,7 +30,7 @@ Outspend is an **Android-only**, plain-JavaScript, offline-first expense tracker
 - **Navigation:** React Navigation bottom tabs in `App.js`. We deliberately do **not** use Expo Router: the app is a bare-workflow project with a custom Kotlin SMS module, and `android/` is committed and edited by hand (the "never edit `ios/`/`android/`" rule does not apply here).
 - **Data:** WatermelonDB (SQLite). Schema/migrations in `src/db/`. Screens never write to the DB directly; use the helpers in `src/data/`.
 - **Pure logic** (parser, rules, analytics, subscription detection, export formatting, access/trial) lives in `src/services/` with no native or DB imports, and is unit-tested in `__tests__/`. Keep it that way.
-- **SMS pipeline:** `SmsModule.kt` -> `src/native/Sms.js` -> `SmsIngest.js` -> `TransactionManager.js` (commit) <- `IngestPlanner.js` (pure plan). Every SMS gets a stable `external_id`, so imports are idempotent.
+- **SMS pipeline:** live: `SmsReceiver.kt` (manifest receiver, fires even when the app is closed) -> `SmsHeadlessTaskService.kt` -> JS task `SmsReceivedTask` (`index.js`) -> `SmsIngest.handleIncomingSms`. Catch-up/history: `SmsModule.getInboxSince` -> `src/native/Sms.js` -> `SmsIngest.js`. Both end in `TransactionManager.js` (commit) <- `IngestPlanner.js` (pure plan). Every SMS gets a stable `external_id`, so imports are idempotent. Unknown payees trigger a notification with a reply box (`NotificationService.js`).
 - **Privacy is a product constraint:** no analytics, no remote logging, no network calls with user data. SMS and receipts stay on the device.
 - **Settings/flags:** persisted app state in `src/services/Settings.js`; release switches in `src/config.js` (`enforcePaywall`).
 

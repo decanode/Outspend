@@ -4,6 +4,7 @@ Private, offline expense tracker for Android. It reads bank/UPI SMS on the devic
 
 ## Features
 - Automatic transactions from bank/UPI/card SMS (live + history import + daily audit), with OTP/promo filtering, duplicate protection and refund linking
+- Instant capture: a manifest-declared receiver wakes the app for each bank SMS, even when it is closed. Unknown payees get a notification with a "Name it" reply box
 - Manual and voice entry (voice is confirmed before saving); a manual entry is upgraded to "verified" when its SMS arrives
 - Merchant rules and categories; unknown payees surface under "Needs attention"
 - Ledger with search, filters, per-day totals, swipe actions, soft delete with undo, edit, receipt photos
@@ -31,6 +32,6 @@ npx expo run:android        # development build (native modules: SMS, camera, sp
 5. **Device test pass:** SMS (foreground/background/killed), camera receipts, voice, notifications, billing and restore. The manual checklist is in `NEW_IMP_PLAN.MD` section 6.
 
 ## Known limits
-- SMS received while the app process is not running are not seen live; they are picked up by the delta sync on next launch and by the daily background task.
+- Capture while the app is closed depends on Android allowing the background start. If the OS refuses (aggressive battery savers on some phones), the SMS is picked up by the delta sync on next launch and the daily task. Reading UPI app notifications (GPay/PhonePe) is intentionally not supported; bank SMS cover those payments.
 - The trial start is stored locally, so reinstalling resets it (accepted for a privacy-first design).
 - `allowBackup` is disabled so the transaction database is not copied to cloud backup. Moving to a new phone requires an export.
