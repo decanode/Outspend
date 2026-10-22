@@ -1,35 +1,123 @@
-import * as Notifications from 'expo-notifications';
-import { database } from '../db';
-import { Q } from '@nozbe/watermelondb';
+import * as Notifications from 'expo-notifications'
+import { Platform } from 'react-native'
+import { fetchSubscriptions, updateSubscription } from '../data/subscriptions'
+import { fetchLiveTransactions } from '../data/transactions'
+import { col, toPlain } from '../data/util'
+import { rollForward } from './SubscriptionDetector'
+import { cardSpend, cycleStart, utilisation, utilisationLevel, formatINR } from './Analytics'
+import { getSettings, updateSettings } from './Settings'
+
+const CHANNEL_ID = 'reminders'
+const REMINDER_LEAD_DAYS = 3
+const REMINDER_HOUR = 9
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
-});
+})
 
-export const scheduleSubscriptionReminders = async () => {
-  const { status } = await Notifications.requestPermissionsAsync();
-  if (status !== 'granted') return;
+/** Create the Android channel, then ask for permission. Returns whether it was granted. */
+export const initNotifications = async () => {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+      name: 'Reminders & alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+    })
+  }
+  const current = await Notifications.getPermissionsAsync()
+  if (current.granted) return true
+  const req = await Notifications.requestPermissionsAsync()
+  return !!req.granted
+}
 
-  // Scan database for Subscriptions table
-  const subscriptions = await database.collections.get('subscriptions').query().fetch();
-  
-  subscriptions.forEach(async (sub) => {
-    // If renewal date is within 3 days, schedule local notification
-    const triggerDate = new Date(sub.renewal_date);
-    triggerDate.setDate(triggerDate.getDate() - 3);
+export const reminderDate = (nextBillingDate) => {
+  const d = new Date(nextBillingDate)
+  d.setDate(d.getDate() - REMINDER_LEAD_DAYS)
+  d.setHours(REMINDER_HOUR, 0, 0, 0)
+  return d
+}
 
-    if (triggerDate > new Date()) {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Subscription Renewal Alert',
-          body: `Your ${sub.name} subscription of ₹${sub.amount} is renewing in 3 days.`,
-        },
-        trigger: triggerDate,
-      });
+const cancelById = async (id) => {
+  if (!id) return
+  try { await Notifications.cancelScheduledNotificationAsync(id) } catch { /* already gone */ }
+}
+
+/** (Re)schedule the 3-day renewal reminder for one subscription. Safe to call repeatedly. */
+export const scheduleSubscriptionReminder = async (sub) => {
+  await cancelById(sub.notification_id)
+  if (!sub.is_active) {
+    if (sub.notification_id) await updateSubscription(sub, { notification_id: null })
+    return null
+  }
+  const when = reminderDate(sub.next_billing_date)
+  if (when.getTime() <= Date.now()) {
+    if (sub.notification_id) await updateSubscription(sub, { notification_id: null })
+    return null
+  }
+  const id = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Subscription renewal alert',
+      body: `Your ${sub.name} subscription of ${formatINR(sub.amount)} renews in ${REMINDER_LEAD_DAYS} days.`,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: when,
+      channelId: CHANNEL_ID,
+    },
+  })
+  await updateSubscription(sub, { notification_id: id })
+  return id
+}
+
+export const cancelSubscriptionReminder = (sub) => cancelById(sub.notification_id)
+
+/** Warn once per cycle per threshold when a credit card nears its limit. */
+export const checkCardLimits = async () => {
+  const [cards, txs, settings] = await Promise.all([
+    col('credit_cards').query().fetch(),
+    fetchLiveTransactions(),
+    getSettings(),
+  ])
+  const alerts = { ...settings.cardAlerts }
+  let changed = false
+  for (const model of cards) {
+    const card = toPlain(model)
+    if (!(card.limit > 0)) continue
+    const ratio = utilisation(cardSpend(card, txs), card.limit)
+    const level = utilisationLevel(ratio)
+    const cycle = cycleStart(card.billing_day)
+    const seen = alerts[card.id]
+    const alreadyNotified = seen && seen.cycle === cycle && (seen.level === level || seen.level === 'critical')
+    if (level === 'ok' || alreadyNotified) continue
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: level === 'critical' ? 'Credit limit almost reached' : 'Credit limit warning',
+        body: `${card.name} is at ${Math.round(ratio * 100)}% of its ${formatINR(card.limit)} limit.`,
+      },
+      trigger: null,
+    })
+    alerts[card.id] = { cycle, level }
+    changed = true
+  }
+  if (changed) await updateSettings({ cardAlerts: alerts })
+}
+
+/**
+ * Roll lapsed billing dates forward, reschedule every reminder and re-check card limits.
+ * Called on app start, after sync, and whenever subscriptions change.
+ */
+export const refreshReminders = async () => {
+  const perm = await Notifications.getPermissionsAsync()
+  const subs = await fetchSubscriptions()
+  for (const sub of subs) {
+    if (sub.is_active && sub.next_billing_date <= Date.now()) {
+      await updateSubscription(sub, { next_billing_date: rollForward(sub.next_billing_date, sub.billing_cycle) })
     }
-  });
+    if (perm.granted) await scheduleSubscriptionReminder(sub)
+  }
+  if (perm.granted) await checkCardLimits()
 }
