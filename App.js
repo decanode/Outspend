@@ -25,8 +25,8 @@ import * as Notifications from 'expo-notifications'
 import { refreshReminders, ensureNotificationSetup, handleNotificationResponse } from './src/services/NotificationService'
 import { syncInbox } from './src/services/SmsIngest'
 import { hasSmsPermission } from './src/services/Permissions'
-import { isLockEnabled } from './src/services/AppLock'
-import { shouldLockOnResume } from './src/services/PinLogic'
+import { isLockActive } from './src/services/AppLock'
+import { shouldLockOnResume } from './src/services/LockLogic'
 import { setNumberStyle } from './src/services/Analytics'
 import { afterChange } from './src/services/PostChange'
 
@@ -72,7 +72,7 @@ export default function App() {
       setNumberStyle(settings.numberStyle)
       if (settings.isOnboarded) await ensureTrialStarted()
       const nextAccess = await getAccessState()
-      const mustLock = settings.isOnboarded && (await isLockEnabled())
+      const mustLock = settings.isOnboarded && (await isLockActive())
       if (cancelled) return
       setLocked(mustLock)
       setIsOnboarded(settings.isOnboarded)
@@ -135,7 +135,7 @@ export default function App() {
       }
       const since = backgroundedAt.current
       backgroundedAt.current = null
-      if (state === 'active' && shouldLockOnResume({ enabled: await isLockEnabled(), backgroundedAt: since })) setLocked(true)
+      if (state === 'active' && shouldLockOnResume({ enabled: await isLockActive(), backgroundedAt: since })) setLocked(true)
     })
     return () => sub.remove()
   }, [isOnboarded])

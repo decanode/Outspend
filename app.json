@@ -38,8 +38,7 @@
         }
       ],
       "expo-font",
-      "expo-sharing",
-      "expo-secure-store"
+      "expo-sharing"
     ]
   }
 }

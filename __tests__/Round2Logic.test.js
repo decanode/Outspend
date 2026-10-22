@@ -333,35 +333,18 @@ describe('encrypted backup', () => {
   })
 })
 
-import { isValidPin, lockoutMs, hashPin, safeEqual, shouldLockOnResume } from '../src/services/PinLogic'
+import { shouldLockOnResume, isUnenforceable } from '../src/services/LockLogic'
 
-describe('pin lock logic', () => {
-  test('pin format', () => {
-    for (const ok of ['1234', '123456']) expect(isValidPin(ok)).toBe(true)
-    for (const bad of ['123', '1234567', 'abcd', '12 34', '', null]) expect(isValidPin(bad)).toBe(false)
-  })
-  test('lockout grows after five failures and is capped', () => {
-    expect([0, 1, 4].map(lockoutMs)).toEqual([0, 0, 0])
-    expect(lockoutMs(5)).toBe(30000)
-    expect(lockoutMs(6)).toBe(60000)
-    expect(lockoutMs(7)).toBe(120000)
-    expect(lockoutMs(50)).toBe(30 * 60 * 1000)
-  })
-  test('hash is salted, deterministic and compares safely', async () => {
-    const salt = toBase64(randomBytes(16))
-    const a = await hashPin('1234', salt)
-    expect(await hashPin('1234', salt)).toBe(a)
-    expect(await hashPin('1235', salt)).not.toBe(a)
-    expect(await hashPin('1234', toBase64(randomBytes(16)))).not.toBe(a)
-    expect(safeEqual(a, a)).toBe(true)
-    expect(safeEqual(a, a.slice(0, -1) + 'x')).toBe(false)
-    expect(safeEqual(a, 'short')).toBe(false)
-  })
-  test('locks after 30 s in the background, not before, not when disabled', () => {
+describe('app lock logic (uses the phone screen lock, no app PIN)', () => {
+  test('locks after 30 s in the background, not before, not when off', () => {
     const now = 1_000_000
     expect(shouldLockOnResume({ enabled: true, backgroundedAt: now - 31000, now })).toBe(true)
     expect(shouldLockOnResume({ enabled: true, backgroundedAt: now - 5000, now })).toBe(false)
     expect(shouldLockOnResume({ enabled: false, backgroundedAt: now - 99999, now })).toBe(false)
     expect(shouldLockOnResume({ enabled: true, backgroundedAt: null, now })).toBe(false)
+  })
+  test('a phone with no screen lock can never lock the user out', () => {
+    for (const e of ['passcode_not_set', 'not_enrolled', 'not_available']) expect(isUnenforceable(e)).toBe(true)
+    for (const e of ['user_cancel', 'authentication_failed', 'lockout', 'timeout']) expect(isUnenforceable(e)).toBe(false)
   })
 })

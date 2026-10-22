@@ -12,7 +12,7 @@ Private, offline expense tracker for Android. It reads bank/UPI SMS on the devic
 - Plan tab: category and overall monthly budgets with daily allowance and 80%/100% alerts, savings goals, upcoming-bills calendar, payday countdown, and money owed to you from split payments
 - Transfers between your own accounts and card-bill payments are detected and kept out of spending and income; splits count only your share; tags group spending (e.g. a trip)
 - Alerts for unusual spend and duplicate charges
-- App lock (PIN + optional fingerprint), encrypted backup/restore (AES-256-GCM), home-screen widget
+- App lock using the phone's own fingerprint/face/screen lock (no separate app PIN), encrypted backup/restore (AES-256-GCM), home-screen widget
 - Accounts (opening balance + reconciliation), credit cards (cycle spend, 80%/95% limit alerts), subscription detection with renewal reminders
 - Export to CSV, JSON and a PDF group bill via the share sheet
 - 30-day trial then a Google Play subscription (paywall behind a flag, see below)

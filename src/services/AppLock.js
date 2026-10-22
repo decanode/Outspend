@@ -1,59 +1,47 @@
-import * as SecureStore from 'expo-secure-store'
 import * as LocalAuthentication from 'expo-local-authentication'
-import { getRandomBytes } from 'expo-crypto'
-import { toBase64 } from './BackupCrypto'
-import { hashPin, safeEqual, isValidPin, lockoutMs } from './PinLogic'
 import { getSettings, updateSettings } from './Settings'
+import { isUnenforceable } from './LockLogic'
 
-const PIN_KEY = 'outspend_pin'
-const TRIES_KEY = 'outspend_pin_tries'
+// The app has no PIN of its own. It asks Android to verify the user with the phone's screen
+// lock: fingerprint/face, or the phone's PIN, pattern or password. Nothing new to remember,
+// and Android handles retries and lockouts.
 
-const read = async (key) => {
-  try { return JSON.parse(await SecureStore.getItemAsync(key)) } catch { return null }
+/** Does this phone have a screen lock (or biometrics) set up? */
+export const deviceLockAvailable = async () =>
+  (await LocalAuthentication.getEnrolledLevelAsync()) !== LocalAuthentication.SecurityLevel.NONE
+
+/**
+ * Show the system prompt. @returns {Promise<{ ok: boolean, unenforceable?: boolean, error?: string }>}
+ */
+export const authenticate = async (message = 'Unlock Outspend') => {
+  const r = await LocalAuthentication.authenticateAsync({
+    promptMessage: message,
+    cancelLabel: 'Cancel',
+    disableDeviceFallback: false, // allow the phone's PIN/pattern/password, not just biometrics
+  })
+  if (r.success) return { ok: true }
+  return { ok: false, error: r.error, unenforceable: isUnenforceable(r.error) }
 }
 
-export const isLockEnabled = async () => {
+/** Lock only applies while the switch is on AND the phone still has a screen lock. */
+export const isLockActive = async () => {
   const s = await getSettings()
-  return !!s.lockEnabled && !!(await read(PIN_KEY))
+  return !!s.lockEnabled && (await deviceLockAvailable())
 }
 
-export const setPin = async (pin) => {
-  if (!isValidPin(pin)) throw new Error('PIN must be 4 to 6 digits.')
-  const salt = toBase64(getRandomBytes(16))
-  await SecureStore.setItemAsync(PIN_KEY, JSON.stringify({ salt, hash: await hashPin(pin, salt) }))
-  await SecureStore.deleteItemAsync(TRIES_KEY)
+/** @returns {Promise<'on'|'no_device_lock'|'cancelled'>} */
+export const enableLock = async () => {
+  if (!(await deviceLockAvailable())) return 'no_device_lock'
+  const r = await authenticate('Confirm to turn on app lock')
+  if (!r.ok) return 'cancelled'
   await updateSettings({ lockEnabled: true })
+  return 'on'
 }
 
+/** Turning it off needs the phone's lock too, so a borrowed unlocked phone cannot disable it. */
 export const disableLock = async () => {
-  await SecureStore.deleteItemAsync(PIN_KEY)
-  await SecureStore.deleteItemAsync(TRIES_KEY)
-  await updateSettings({ lockEnabled: false, lockBiometric: false })
-}
-
-/** @returns {Promise<{ ok: boolean, retryInMs: number }>} */
-export const verifyPin = async (pin) => {
-  const tries = (await read(TRIES_KEY)) || { failed: 0, lockedUntil: 0 }
-  const wait = tries.lockedUntil - Date.now()
-  if (wait > 0) return { ok: false, retryInMs: wait }
-
-  const stored = await read(PIN_KEY)
-  if (stored && safeEqual(await hashPin(pin, stored.salt), stored.hash)) {
-    await SecureStore.deleteItemAsync(TRIES_KEY)
-    return { ok: true, retryInMs: 0 }
-  }
-  const failed = tries.failed + 1
-  const lock = lockoutMs(failed)
-  await SecureStore.setItemAsync(TRIES_KEY, JSON.stringify({ failed, lockedUntil: lock ? Date.now() + lock : 0 }))
-  return { ok: false, retryInMs: lock }
-}
-
-export const biometricAvailable = async () =>
-  (await LocalAuthentication.hasHardwareAsync()) && (await LocalAuthentication.isEnrolledAsync())
-
-export const unlockWithBiometrics = async () => {
-  const s = await getSettings()
-  if (!s.lockBiometric || !(await biometricAvailable())) return false
-  const r = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock Outspend', cancelLabel: 'Use PIN' })
-  return !!r.success
+  const r = await authenticate('Confirm to turn off app lock')
+  if (!r.ok && !r.unenforceable) return false
+  await updateSettings({ lockEnabled: false })
+  return true
 }

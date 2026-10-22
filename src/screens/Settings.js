@@ -10,8 +10,8 @@ import { wipeAllData } from '../data/transactions'
 import { monthBounds, setNumberStyle } from '../services/Analytics'
 import { formatDateTime, formatDate } from '../utils/format'
 import { Button, Chip, Sheet } from '../components/ui'
-import { PinSetupSheet, PinConfirmSheet, PassphraseSheet } from '../components/SecuritySheets'
-import { setPin, verifyPin, disableLock, biometricAvailable } from '../services/AppLock'
+import { PassphraseSheet } from '../components/SecuritySheets'
+import { enableLock, disableLock, authenticate } from '../services/AppLock'
 import { createEncryptedBackup, pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
 import MerchantRules from './MerchantRules'
 import { useApp } from '../AppContext'
@@ -32,18 +32,16 @@ export default function Settings() {
   const [showRange, setShowRange] = useState(false)
   const [billRange, setBillRange] = useState('MONTH')
   const [billCats, setBillCats] = useState([])
-  const [pinSheet, setPinSheet] = useState(null) // 'set' | 'disable'
   const [passSheet, setPassSheet] = useState(null) // 'create' | 'restore'
   const [restoreText, setRestoreText] = useState(null)
-  const [bioAvailable, setBioAvailable] = useState(false)
 
   const [tick, setTick] = useState(0)
   const reload = useCallback(() => setTick(t => t + 1), [])
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const [s, ok, bio] = await Promise.all([getSettings(), hasSmsPermission(), biometricAvailable().catch(() => false)])
-      if (alive) { setSettings(s); setSmsOk(ok); setBioAvailable(bio) }
+      const [s, ok] = await Promise.all([getSettings(), hasSmsPermission()])
+      if (alive) { setSettings(s); setSmsOk(ok) }
     })()
     return () => { alive = false }
   }, [tick])
@@ -85,20 +83,37 @@ export default function Settings() {
     if (!res.count) Alert.alert('Nothing to export', 'No expenses match that range and those categories.')
   })
 
-  const wipe = () =>
+  const wipe = async () => {
+    if (settings && settings.lockEnabled) {
+      const r = await authenticate('Confirm to delete all data')
+      if (!r.ok && !r.unenforceable) return
+    }
     Alert.alert('Delete all data?', 'Every transaction, account, card, rule and subscription on this device will be erased.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Continue', style: 'destructive', onPress: () =>
           Alert.alert('Are you absolutely sure?', 'This cannot be undone. Export your data first if you may need it.', [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete everything', style: 'destructive', onPress: () => run('Deleting', async () => { await wipeAllData(); await disableLock(); await resetSettings(); await restartOnboarding() }) },
+            { text: 'Delete everything', style: 'destructive', onPress: () => run('Deleting', async () => { await wipeAllData(); await resetSettings(); await restartOnboarding() }) },
           ]),
       },
     ])
+  }
 
   const toggle = async (key, value) => {
     setSettings(await updateSettings({ [key]: value }))
+  }
+
+  const toggleLock = async (on) => {
+    if (on) {
+      const r = await enableLock()
+      if (r === 'no_device_lock') {
+        Alert.alert('Set a screen lock first', "Outspend uses your phone's own screen lock. Set a PIN, pattern, password or fingerprint in your phone's Settings, then turn this on.")
+      }
+    } else if (!(await disableLock())) {
+      Alert.alert('Still locked', 'Confirm with your phone lock to turn the app lock off.')
+    }
+    reload()
   }
 
   const changeNumberStyle = async (style) => {
@@ -150,17 +165,11 @@ export default function Settings() {
         <View style={[GLASS_STYLES.card, styles.card]}>
           <View style={styles.switchRow}>
             <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={styles.rowText}>App lock (PIN)</Text>
-              <Text style={styles.hint}>Ask for a PIN when opening the app or returning after 30 seconds.</Text>
+              <Text style={styles.rowText}>Lock the app</Text>
+              <Text style={styles.hint}>Uses your phone&apos;s fingerprint, face or screen lock (PIN, pattern, password). Nothing new to remember. Asked when you open the app or return after 30 seconds.</Text>
             </View>
-            <Switch value={!!(settings && settings.lockEnabled)} onValueChange={(v) => setPinSheet(v ? 'set' : 'disable')} trackColor={{ true: COLORS.emerald }} />
+            <Switch value={!!(settings && settings.lockEnabled)} onValueChange={toggleLock} trackColor={{ true: COLORS.emerald }} />
           </View>
-          {settings && settings.lockEnabled && bioAvailable ? (
-            <View style={[styles.switchRow, { marginTop: 12 }]}>
-              <Text style={[styles.rowText, { flex: 1 }]}>Unlock with fingerprint</Text>
-              <Switch value={!!settings.lockBiometric} onValueChange={(v) => toggle('lockBiometric', v)} trackColor={{ true: COLORS.emerald }} />
-            </View>
-          ) : null}
         </View>
 
         <Text style={styles.section}>Alerts</Text>
@@ -222,13 +231,6 @@ export default function Settings() {
         <Button title="Create PDF" onPress={exportBill} />
       </Sheet>
 
-      {pinSheet === 'set' ? (
-        <PinSetupSheet onClose={() => setPinSheet(null)} onSave={async (pin) => { await setPin(pin); setPinSheet(null); reload() }} />
-      ) : null}
-      {pinSheet === 'disable' ? (
-        <PinConfirmSheet title="Turn off app lock" onClose={() => setPinSheet(null)}
-          onVerify={async (pin) => { const r = await verifyPin(pin); if (r.ok) { await disableLock(); setPinSheet(null); reload() } return r.ok }} />
-      ) : null}
       {passSheet === 'create' ? (
         <PassphraseSheet mode="create" onClose={() => setPassSheet(null)}
           onSubmit={async (pass) => { const c = await createEncryptedBackup(pass); setPassSheet(null); Alert.alert('Backup created', `${c.transactions} transactions saved. Keep the file and your passphrase safe.`) }} />
