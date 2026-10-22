@@ -488,7 +488,7 @@ Defaults are what is in the code now. Reply with your choice (or edit this file)
 2. Set `FEATURES.enforcePaywall = true` in `src/config.js` for the production build (only after step C2-C3 work).
 3. `npx eas-cli@latest login`, then `npx eas-cli@latest build:configure` if prompted; create/upload the signing key (EAS can generate it).
 4. `npx eas-cli@latest build --platform android --profile production` (AAB) and upload to the Play internal track; `--profile preview` gives an installable APK for friends.
-5. Review launcher icon and splash artwork in `assets/` and `android/app/src/main/res/` (the splash is still the starter image).
+5. ~~Review launcher icon and splash artwork~~ **Done:** new Outspend icon (emerald rupee coin with a coral arrow leaving it) generated for the store icon, adaptive icon (foreground/background/monochrome), legacy square/round launcher icons, splash and favicon. Editable SVG sources are in `assets/branding/`. Check it on a real launcher (round, square and themed icon shapes).
 6. Bump `versionCode`/`version` for each upload (EAS can auto-increment).
 7. Optional: `npx expo-doctor` shows two informational warnings (committed `android/` means `app.json` is not synced by EAS; WatermelonDB/react-native-fs lack New-Architecture metadata). They are expected; tell me if the New Architecture causes runtime problems and I will look at alternatives.
 

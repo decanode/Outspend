@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><g transform="translate(512 512) scale(1) translate(-512 -512) translate(8 -14)">
+  <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+    <rect width="1024" height="1024" fill="white"/>
+    <text x="462" y="642" font-family="DejaVu Sans" font-weight="bold" font-size="275" text-anchor="middle" fill="black">₹</text>
+    <path d="M 612 412 L 724 300 M 606 300 L 724 300 L 724 418" fill="none" stroke="black" stroke-width="136" stroke-linecap="round" stroke-linejoin="round"/>
+  </mask>
+  <circle cx="480" cy="544" r="235" fill="#10b981" mask="url(#cut)"/>
+  <g mask="url(#cut)"><circle cx="480" cy="544" r="209" fill="none" stroke="#34d399" stroke-width="7" opacity="0.55"/></g>
+  <path d="M 612 412 L 724 300 M 606 300 L 724 300 L 724 418" fill="none" stroke="#ef476f" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
