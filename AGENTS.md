@@ -23,11 +23,26 @@ npx expo install --fix      # fix incompatible package versions
 
 Run lint and typecheck before declaring any task done.
 
-## Navigation & Routing
+## Project architecture (read this before changing structure)
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+Outspend is an **Android-only**, plain-JavaScript, offline-first expense tracker. The generic Expo-starter guidance above is overridden where it conflicts with this section.
+
+- **Navigation:** React Navigation bottom tabs in `App.js`. We deliberately do **not** use Expo Router: the app is a bare-workflow project with a custom Kotlin SMS module, and `android/` is committed and edited by hand (the "never edit `ios/`/`android/`" rule does not apply here).
+- **Data:** WatermelonDB (SQLite). Schema/migrations in `src/db/`. Screens never write to the DB directly; use the helpers in `src/data/`.
+- **Pure logic** (parser, rules, analytics, subscription detection, export formatting, access/trial) lives in `src/services/` with no native or DB imports, and is unit-tested in `__tests__/`. Keep it that way.
+- **SMS pipeline:** `SmsModule.kt` -> `src/native/Sms.js` -> `SmsIngest.js` -> `TransactionManager.js` (commit) <- `IngestPlanner.js` (pure plan). Every SMS gets a stable `external_id`, so imports are idempotent.
+- **Privacy is a product constraint:** no analytics, no remote logging, no network calls with user data. SMS and receipts stay on the device.
+- **Settings/flags:** persisted app state in `src/services/Settings.js`; release switches in `src/config.js` (`enforcePaywall`).
+
+## Commands for this repo
+
+```bash
+npm install --legacy-peer-deps   # peer ranges conflict upstream; this is required
+npm test                         # jest (pure logic + in-memory WatermelonDB integration)
+npm run lint                     # expo lint
+npx expo-doctor
+npx expo run:android             # needs a dev build; Expo Go cannot load the native modules
+```
 
 ## Building with EAS
 

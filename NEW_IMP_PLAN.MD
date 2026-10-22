@@ -381,4 +381,52 @@ Dependencies: P0-1 before everything. P0-4/5 before P0-6/7. P1-A before the Dash
 - Scope changes:
 - Items to drop / defer:
 - Priority changes:
-- Approved to start: **[ ] yes**  (start at: ______ )
+- Approved to start: **[x] yes**  (approved by the user in chat, 2026-10-22: "Validate and start the work. Stop only for queries. Manual steps … later at once.")
+
+
+---
+
+## 8. Implementation Status (updated after the first implementation pass, branch `feat/implementation`)
+
+All coding for Phases 0-4 and 6 is done. Verified here: `npm test` (129 tests, incl. an in-memory WatermelonDB integration suite and a v1->v2 migration-shape test), `npm run lint` (clean), and `expo export --platform android` (bundles). **Nothing has run on a device or emulator** (no Android hardware here), so everything native is unverified at runtime: SMS module (Kotlin was not compiled), camera, voice, notifications, billing.
+
+| Task | State | Notes |
+|---|---|---|
+| P0-0 Tooling | Done | `npm test`, `npm run lint`; ESLint pinned to 9 (v10 breaks eslint-plugin-react); plain Jest + Babel (jest-expo's RN preset would not resolve). No `typecheck` script because the project stays JS (Q6). |
+| P0-1 Schema/models | Done | v2 + migration. Added beyond plan: `card_id`, `last4`, `payment_mode`, `notes` on transactions. `statement_day` dropped (only `billing_day` is used). `app_settings` is AsyncStorage (`src/services/Settings.js`). `renewal_date` bug fixed. |
+| P0-2 Persisted state | Done | onboarding, start date, trial start, last import, last audit, dismissed suggestions, card alerts. |
+| P0-3 Data layer | Done | `src/data/*`; screens use it for all writes. |
+| P0-4 Permissions | Done | SMS (with "blocked" -> app settings), notifications (channel first), mic via the speech module, camera via VisionCamera. |
+| P0-5 Native module | Done, **uncompiled** | `getInboxSince(since, limit)`, multi-part SMS stitching, receiver now requires `BROADCAST_SMS`, unregistered in `invalidate()`. Strategy for killed-app SMS: no manifest receiver; delta sync on launch/resume + daily task. |
+| P0-6 Live listener | Done | serialised queue. |
+| P0-7 History import + daily audit | Done | paged, idempotent (hashed `external_id`), delta from `lastImportedTimestamp`. Uses **`expo-background-task`** (`expo-background-fetch` is deprecated in SDK 57; removed). Gmail call removed from the task. |
+| P0-8 Parser | Done | 45 SMS fixtures, OTP/promo/failed/reminder rejection, last4, balance clause stripped, payment mode, VPA, refund linking. |
+| P0-9 Onboarding | Done | 3 steps (Gmail step removed while deferred). |
+| P1-A Rules | Done | substring or `/regex/`; retro-apply; keyword fallback. |
+| P1-5 Dashboard | Done | real balance, month spend, 7-day chart, Needs-attention with working Save rule/Dismiss, voice with confirmation sheet, manual add. |
+| P1-6 Ledger | Done | day groups + totals, search/type/period/category filters, paging, tappable swipe actions, undo delete, edit, category sheet with "apply to all", receipt attach/view (per transaction). The old Ledger camera FAB was replaced by an add (+) FAB. |
+| P1-7 Analytics | Done | month picker, donut, legend, top 5, vs-last-month %. Daily trend line not built (was optional). |
+| P1-8 Accounts | Done | account/card CRUD, opening balance, reconcile, cycle utilisation with 80/95% colours, net worth. |
+| P1-9 Settings | Done | plan status, last audit, resync, change start date, rules manager, CSV/JSON/PDF (range + category picker), double-confirmed wipe. |
+| P1-10 Subscriptions | Done | detection (monthly/yearly, +/-5%), track/dismiss, manual add/edit/pause/delete. Lives in the Accounts tab. |
+| P1-11 Notifications | Done | SDK 57 API, Android channel, 3-day reminder at 09:00, rescheduled on every change, card-limit alerts once per cycle/level. Daily "needs review" digest not built (was optional). |
+| P2-12 Export | Done | share sheet, proper CSV escaping, JSON, escaped PDF. |
+| P2-10 Billing | Done, **untested against Play** | react-native-iap v16 API verified from the installed types; acknowledges purchases; restore; 7-day offline grace; 30-day trial. Enforcement is behind `FEATURES.enforcePaywall` (false). |
+| P2-13 Release | Partly | manifest cleaned and permissions added, `app.json` Android-only/dark, `eas.json` added, error boundary. **Not done (manual):** see below. |
+| P2-14 Tests/docs | Done | README, AGENTS.md corrected. |
+| P2-1 Gmail | Deferred | unchanged, per Q5. |
+
+### Decisions I made that you may want to reverse
+- `android:allowBackup="false"` (keeps the DB out of cloud backup, in line with "never leaves your device"; the cost is no automatic restore on a new phone).
+- Reconciling an account sets a new baseline "from now"; later-dated entries count, earlier-dated ones do not.
+- Removed `READ/WRITE_EXTERNAL_STORAGE` and `SYSTEM_ALERT_WINDOW`; added `CAMERA`, `RECORD_AUDIO`, `POST_NOTIFICATIONS`, `BILLING`.
+- `npm install` needs `--legacy-peer-deps` (upstream peer ranges conflict).
+
+### Manual steps for you (collected in one place)
+1. Build and run a development build on a real Android device: `npx expo run:android`. The Kotlin changes have never been compiled, so build errors there are possible.
+2. Walk through the section 6 checklist above on the device. SMS test: send yourself a message from a sender id like `VM-HDFCBK` (an emulator can inject SMS via the extended-controls SMS tab).
+3. Play Console: create the subscription product `com.decanode.outspend.premium_monthly`, add license testers; test purchase/restore; then set `enforcePaywall: true` in `src/config.js`.
+4. Play Console: SMS Permissions Declaration Form, Data safety form, privacy-policy URL.
+5. Signing/upload key and `eas build --profile production`.
+6. Review icon/splash assets (`assets/`), and the Android splash drawable.
+7. Decide on Gmail later: Google Cloud OAuth client (Android + web), restricted-scope verification.
