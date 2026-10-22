@@ -6,7 +6,7 @@ import { PieChart, BarChart } from 'react-native-gifted-charts'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { categoryColor } from '../constants/categories'
-import { formatINR } from '../services/Analytics'
+import { formatMoney } from '../services/Analytics'
 import { makePeriod, shiftPeriod, periodLabel, isCurrentPeriod, analyzePeriod, runRate, monthlyTrend, categoryTrend } from '../services/Insights'
 import { OVERALL } from '../services/Budgets'
 import { exportPeriodReport } from '../services/ExportService'
@@ -58,30 +58,36 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
   return (
     <>
       <Card>
-        <Text style={styles.big}>{formatINR(a.total)}</Text>
+        <Text style={styles.big}>{formatMoney(a.total)}</Text>
         <View style={styles.row}>
           <Delta pct={a.deltaPct} />
-          <Text style={styles.sub}>  vs {label} ({formatINR(a.prevTotal)})</Text>
+          <Text style={styles.sub}>  vs {label} ({formatMoney(a.prevTotal)})</Text>
         </View>
         <View style={styles.stats}>
-          <View style={styles.stat}><Text style={styles.statLabel}>Income</Text><Text style={[styles.statValue, { color: COLORS.emerald }]}>{formatINR(a.income)}</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>Income</Text><Text style={[styles.statValue, { color: COLORS.emerald }]}>{formatMoney(a.income)}</Text></View>
           <View style={styles.stat}><Text style={styles.statLabel}>Saved</Text><Text style={styles.statValue}>{a.income > 0 ? `${a.savingsRate}%` : '—'}</Text></View>
-          <View style={styles.stat}><Text style={styles.statLabel}>Per day</Text><Text style={styles.statValue}>{formatINR(Math.round(a.avgPerDay))}</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>Per day</Text><Text style={styles.statValue}>{formatMoney(Math.round(a.avgPerDay))}</Text></View>
         </View>
         {rate ? (
           <Text style={[styles.sub, { marginTop: 10 }]}>
-            At this pace you will spend {formatINR(Math.round(rate.projected))} this month
-            {cap ? (rate.projected > cap.amount ? `, ${formatINR(Math.round(rate.projected - cap.amount))} over your ${formatINR(cap.amount)} budget.` : `, within your ${formatINR(cap.amount)} budget.`) : '.'}
+            At this pace you will spend {formatMoney(Math.round(rate.projected))} this month
+            {cap ? (rate.projected > cap.amount ? `, ${formatMoney(Math.round(rate.projected - cap.amount))} over your ${formatMoney(cap.amount)} budget.` : `, within your ${formatMoney(cap.amount)} budget.`) : '.'}
           </Text>
         ) : null}
-        {a.busiest ? <Text style={styles.sub}>Busiest day: {formatDate(a.busiest.start)} ({formatINR(a.busiest.amount)})</Text> : null}
+        {a.busiest ? <Text style={styles.sub}>Busiest day: {formatDate(a.busiest.start)} ({formatMoney(a.busiest.amount)})</Text> : null}
       </Card>
 
+      {a.foreign > 0 ? (
+        <Text style={[styles.sub, { marginBottom: 12 }]}>
+          {a.foreign} transaction{a.foreign === 1 ? '' : 's'} in another currency {a.foreign === 1 ? 'is' : 'are'} not included in these totals.
+        </Text>
+      ) : null}
+
       <Card title="Cash flow">
-        <HBar label="Income" value={formatINR(a.income)} ratio={Math.max(a.income, a.total) > 0 ? a.income / Math.max(a.income, a.total) : 0} />
-        <HBar label="Spent" value={formatINR(a.total)} ratio={Math.max(a.income, a.total) > 0 ? a.total / Math.max(a.income, a.total) : 0} color={COLORS.coral} />
+        <HBar label="Income" value={formatMoney(a.income)} ratio={Math.max(a.income, a.total) > 0 ? a.income / Math.max(a.income, a.total) : 0} />
+        <HBar label="Spent" value={formatMoney(a.total)} ratio={Math.max(a.income, a.total) > 0 ? a.total / Math.max(a.income, a.total) : 0} color={COLORS.coral} />
         <Text style={[styles.sub, { color: a.net >= 0 ? COLORS.emerald : COLORS.coral }]}>
-          {a.net >= 0 ? `You kept ${formatINR(a.net)}` : `You spent ${formatINR(-a.net)} more than you earned`}
+          {a.net >= 0 ? `You kept ${formatMoney(a.net)}` : `You spent ${formatMoney(-a.net)} more than you earned`}
         </Text>
       </Card>
 
@@ -92,7 +98,7 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
               donut innerRadius={55} radius={85}
               data={a.categories.map(c => ({ value: c.amount, color: categoryColor(c.name) }))}
               innerCircleColor={COLORS.background}
-              centerLabelComponent={() => <Text style={{ color: COLORS.textPrimary, fontWeight: 'bold' }}>{formatINR(a.total)}</Text>}
+              centerLabelComponent={() => <Text style={{ color: COLORS.textPrimary, fontWeight: 'bold' }}>{formatMoney(a.total)}</Text>}
             />
           </View>
           <View style={{ marginTop: 14 }}>
@@ -100,10 +106,10 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
               <HBar
                 key={c.name}
                 label={`${c.name} · ${Math.round((c.amount / a.total) * 100)}%`}
-                value={formatINR(c.amount)}
+                value={formatMoney(c.amount)}
                 ratio={c.amount / a.categories[0].amount}
                 color={categoryColor(c.name)}
-                right={c.deltaPct === null ? `New since ${label}` : `${c.deltaPct > 0 ? '+' : ''}${c.deltaPct}% vs ${label} (${formatINR(c.prev)})`}
+                right={c.deltaPct === null ? `New since ${label}` : `${c.deltaPct > 0 ? '+' : ''}${c.deltaPct}% vs ${label} (${formatMoney(c.prev)})`}
               />
             ))}
           </View>
@@ -115,13 +121,13 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
           {a.movers.up.map(m => (
             <View key={`u${m.name}`} style={styles.moverRow}>
               <Text style={styles.moverName}>{m.name}</Text>
-              <Text style={{ color: COLORS.coral }}>▲ {formatINR(m.delta)} more</Text>
+              <Text style={{ color: COLORS.coral }}>▲ {formatMoney(m.delta)} more</Text>
             </View>
           ))}
           {a.movers.down.map(m => (
             <View key={`d${m.name}`} style={styles.moverRow}>
               <Text style={styles.moverName}>{m.name}</Text>
-              <Text style={{ color: COLORS.emerald }}>▼ {formatINR(-m.delta)} less</Text>
+              <Text style={{ color: COLORS.emerald }}>▼ {formatMoney(-m.delta)} less</Text>
             </View>
           ))}
         </Card>
@@ -140,14 +146,14 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
       </Card>
 
       <Card title="Spending patterns">
-        <HBar label="Weekdays" value={formatINR(a.patterns.weekday)} ratio={(100 - a.patterns.weekendShare) / 100} color={COLORS.blue} />
-        <HBar label="Weekends" value={formatINR(a.patterns.weekend)} ratio={a.patterns.weekendShare / 100} color={COLORS.amber} right={`${a.patterns.weekendShare}% of spending happens on weekends`} />
+        <HBar label="Weekdays" value={formatMoney(a.patterns.weekday)} ratio={(100 - a.patterns.weekendShare) / 100} color={COLORS.blue} />
+        <HBar label="Weekends" value={formatMoney(a.patterns.weekend)} ratio={a.patterns.weekendShare / 100} color={COLORS.amber} right={`${a.patterns.weekendShare}% of spending happens on weekends`} />
         <Text style={[styles.cardTitle, { marginTop: 6, fontSize: 14 }]}>Time of day</Text>
         {Object.entries(a.patterns.timeOfDay).map(([k, v]) => (
-          <HBar key={k} label={todLabels[k]} value={formatINR(v)} ratio={v / maxTod} color={COLORS.blue} />
+          <HBar key={k} label={todLabels[k]} value={formatMoney(v)} ratio={v / maxTod} color={COLORS.blue} />
         ))}
         <Text style={styles.sub}>
-          Small purchases (under ₹{a.patterns.small.threshold}): {a.patterns.small.count} totalling {formatINR(a.patterns.small.total)} — {a.patterns.small.share}% of spending.
+          Small purchases (under {formatMoney(a.patterns.small.threshold)}): {a.patterns.small.count} totalling {formatMoney(a.patterns.small.total)} — {a.patterns.small.share}% of spending.
         </Text>
       </Card>
 
@@ -159,7 +165,7 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
                 <Text style={screenStyles.rowTitle} numberOfLines={1}>{t.merchant}</Text>
                 <Text style={screenStyles.rowSub}>{formatDate(t.timestamp)} · {t.category}</Text>
               </View>
-              <Text style={[screenStyles.amount, { color: COLORS.coral }]}>{formatINR(t.amount)}</Text>
+              <Text style={[screenStyles.amount, { color: COLORS.coral }]}>{formatMoney(t.amount)}</Text>
             </TouchableOpacity>
           ))}
         </Card>

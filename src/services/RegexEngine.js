@@ -1,10 +1,18 @@
 import { smsExternalId } from '../utils/hash'
+import { getRegion, tokenToCurrency, parseNumber, numberPattern } from '../regions'
+import { ALL_TOKENS, CURRENCIES, CODE_PATTERN } from '../regions/currencies'
 
-// Indian bank/merchant sender ids look like VM-HDFCBK, AX-SBIUPI-S, JD-ICICIT-S.
-// A "-P" suffix marks promotional traffic, which is never a transaction.
-export const TRAI_SENDER_REGEX = /^[A-Za-z]{2}-[A-Za-z0-9&]{3,9}(-[A-Za-z])?$/
+// What counts as a money movement is decided by the region's SMS profile (sender format,
+// payment modes, extra words) plus English keywords shared by every country. Add a country
+// in src/regions/profiles.js; this file should not need to change.
 
-const isPromoSender = (sender) => /-P$/i.test(sender)
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const BASE = {
+  debit: ['debited', 'spent', 'paid', 'sent', 'withdrawn', 'purchase', 'purchased', 'payment of', 'txn of', 'transaction of', 'used for', 'transferred', 'trf'],
+  credit: ['credited', 'received', 'deposited', 'added to'],
+  refund: ['refund', 'refunded', 'reversal', 'reversed', 'cashback'],
+}
 
 const REJECT_PATTERNS = [
   /\b(?:otp|one[- ]time password|verification code|passcode)\b/i,
@@ -15,19 +23,44 @@ const REJECT_PATTERNS = [
   /\b(?:statement for|e-?statement|reminder)\b/i,
 ]
 
-const BALANCE_CLAUSE = /(?:avl|avail(?:able)?|total|closing|clear)\.?\s*(?:bal(?:ance)?)\.?\s*(?:is|:|-)?\s*(?:Rs\.?|INR|₹)\s?(\d[\d,]*(?:\.\d{1,2})?)/i
-const AMOUNT = /(?:Rs\.?|INR|₹)\s?(\d[\d,]*(?:\.\d{1,2})?)/i
-const AMOUNT_FALLBACK = /(?:debited|credited|spent|paid|sent|received|withdrawn)\s+(?:by|with|for|of)?\s*(\d[\d,]*(?:\.\d{1,2})?)/i
+const wordsRe = (words) => new RegExp(`\\b(?:${words.map(escapeRe).join('|')})\\b`, 'i')
 
-const DEBIT_KEYWORDS = /\b(?:debited|spent|paid|sent|withdrawn|purchase|purchased|payment of|txn of|transaction of|used for|transferred|trf)\b/i
-const CREDIT_KEYWORDS = /\b(?:credited|received|deposited|added to)\b/i
-const REFUND_KEYWORDS = /\b(?:refund(?:ed)?|reversal|reversed|cashback)\b/i
+const compiled = new Map()
+
+/** Build (and cache) every regex a region needs. */
+const compile = (region) => {
+  const key = `${region.id}|${region.currency}|${region.decimal}`
+  if (compiled.has(key)) return compiled.get(key)
+
+  const homeTokens = new Set((CURRENCIES[region.currency] || { tokens: [] }).tokens)
+  // Symbols (£ € $ S$ ...) and ISO codes are recognised everywhere. Letter abbreviations like
+  // "Rs", "R", "RM" are only trusted for the home currency, to avoid reading "Ref R12" as money.
+  const tokens = ALL_TOKENS.filter(({ token, code }) => !/^[A-Za-z.]+$/.test(token) || token === code || homeTokens.has(token))
+  const tokenPattern = tokens.map(t => escapeRe(t.token)).join('|')
+  const num = numberPattern(region.decimal)
+  const profile = region.sms
+  const extras = profile.extraKeywords || {}
+
+  const c = {
+    tokenPattern,
+    prefix: new RegExp(`(?<![A-Za-z0-9])(${tokenPattern})\\s?(${num})`, 'i'),
+    suffix: new RegExp(`(${num})\\s?(${CODE_PATTERN})\\b`, 'i'),
+    balance: new RegExp(`(?:avl|avail(?:able)?|total|closing|clear|current|ledger)\\.?\\s*(?:bal(?:ance)?)\\.?\\s*(?:is|:|-)?\\s*(?:(?:${tokenPattern})\\s?)?(?:${num})(?:\\s?(?:${CODE_PATTERN})\\b)?`, 'i'),
+    bare: new RegExp(`(?:debited|credited|spent|paid|sent|received|withdrawn)\\s+(?:by|with|for|of)?\\s*(${num})`, 'i'),
+    currencyStart: new RegExp(`^(?:${tokenPattern})(?![A-Za-z])`, 'i'),
+    debit: wordsRe([...BASE.debit, ...(extras.debit || [])]),
+    credit: wordsRe([...BASE.credit, ...(extras.credit || [])]),
+    refund: wordsRe(BASE.refund),
+    reject: [...REJECT_PATTERNS, ...(extras.reject || []).map(w => wordsRe([w]))],
+  }
+  compiled.set(key, c)
+  return c
+}
 
 const VPA = /([a-z0-9._-]{2,}@[a-z][a-z0-9]{1,})/i
 
-const toNumber = (s) => parseFloat(s.replace(/,/g, ''))
-
-export const extractVpa = (text) => {
+export const extractVpa = (text, region = getRegion()) => {
+  if (!region.sms.vpa) return null
   const m = (text || '').match(VPA)
   return m ? m[1] : null
 }
@@ -37,17 +70,14 @@ const extractLast4 = (body) => {
   return m ? m[1] : null
 }
 
-const detectPaymentMode = (body) => {
-  if (/\bupi\b/i.test(body) || VPA.test(body)) return 'UPI'
-  if (/\batm\b|\bcash withdrawal\b/i.test(body)) return 'ATM'
-  if (/\bcard\b/i.test(body)) return 'CARD'
-  if (/\bneft\b/i.test(body)) return 'NEFT'
-  if (/\bimps\b/i.test(body)) return 'IMPS'
-  if (/\brtgs\b/i.test(body)) return 'RTGS'
-  return null
+const detectPaymentMode = (body, region) => {
+  const p = region.sms
+  if (p.vpa && VPA.test(body)) return p.paymentModes.some(m => m.name === 'UPI') ? 'UPI' : null
+  const hit = p.paymentModes.find(m => m.re.test(body))
+  return hit ? hit.name : null
 }
 
-const CLEAN_STOP = '(?=\\s+(?:on|via|ref|refno|upi|txn|using|from|for|dated|date|info|avl|bal|if|call|not)\\b|\\s*[(.,;:]|\\s+-\\s|$)'
+const CLEAN_STOP = '(?=\\s+(?:on|via|ref|refno|upi|txn|using|from|for|dated|date|info|avl|bal|if|call|not|with|ending)\\b|\\s*[(.,;:]|\\s+-\\s|$)'
 const NAME = "([A-Za-z0-9][A-Za-z0-9 &'_@\\-*/]{1,40}?)"
 const OWN_ACCOUNT = /^(?:a\/c|ac|acct|account|your|card|xx|x{2,}|bank|the)\b/i
 
@@ -56,14 +86,15 @@ const titleCase = (s) =>
     ? s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase())
     : s
 
-const cleanMerchant = (raw) => {
+const cleanMerchant = (raw, c) => {
   let m = raw.replace(/^vpa\s+/i, '').replace(/\s+/g, ' ').trim().replace(/[-_/:*]+$/, '').trim()
   if (!m || m.length < 2 || /^\d+$/.test(m)) return null
-  if (OWN_ACCOUNT.test(m) || /^(?:rs|inr|₹)\b/i.test(m)) return null
+  if (OWN_ACCOUNT.test(m) || c.currencyStart.test(m)) return null
   return titleCase(m)
 }
 
-export const extractMerchant = (body, type) => {
+export const extractMerchant = (body, type, region = getRegion()) => {
+  const c = compile(region)
   const patterns = type === 'DEBIT'
     ? [
         new RegExp(`\\bat\\s+${NAME}${CLEAN_STOP}`, 'i'),
@@ -78,34 +109,46 @@ export const extractMerchant = (body, type) => {
   for (const re of patterns) {
     // Scan every occurrence: the first "by"/"to" is often "by Rs.500" or "to your a/c".
     for (const m of body.matchAll(new RegExp(re.source, 'ig'))) {
-      const cleaned = cleanMerchant(m[1])
+      const cleaned = cleanMerchant(m[1], c)
       if (cleaned) return cleaned
     }
   }
   return null
 }
 
-export const isTransactionalSender = (sender) =>
-  !!sender && TRAI_SENDER_REGEX.test(sender) && !isPromoSender(sender)
+export const isTransactionalSender = (sender, region = getRegion()) => {
+  const p = region.sms
+  return !!sender && p.senderPattern.test(sender) && !(p.promoSender && p.promoSender.test(sender))
+}
+
+/** Find the transaction amount and its currency; the balance clause is removed beforehand. */
+const matchAmount = (text, c, region) => {
+  let m = text.match(c.prefix)
+  if (m) return { amount: parseNumber(m[2], region.decimal), currency: tokenToCurrency(m[1], region.currency) }
+  m = text.match(c.suffix)
+  if (m) return { amount: parseNumber(m[1], region.decimal), currency: m[2].toUpperCase() }
+  m = text.match(c.bare)
+  if (m) return { amount: parseNumber(m[1], region.decimal), currency: region.currency }
+  return null
+}
 
 /**
- * Parse a bank/merchant SMS into a transaction draft, or null when the message
- * is not a completed money movement (OTP, promo, reminder, failure, chatter).
+ * Parse a bank/merchant SMS into a transaction draft, or null when the message is not a
+ * completed money movement (OTP, promo, reminder, failure, chatter, a person's number).
  */
-export const parseSmsTransaction = (sender, body, timestamp) => {
-  if (!isTransactionalSender(sender) || !body) return null
-  if (REJECT_PATTERNS.some(re => re.test(body))) return null
+export const parseSmsTransaction = (sender, body, timestamp, region = getRegion()) => {
+  if (!isTransactionalSender(sender, region) || !body) return null
+  const c = compile(region)
+  if (c.reject.some(re => re.test(body))) return null
 
   // Pull the balance clause out first so "Avl Bal Rs 5,000" is never read as the amount.
-  const withoutBalance = body.replace(BALANCE_CLAUSE, ' ')
-  const amountMatch = withoutBalance.match(AMOUNT) || withoutBalance.match(AMOUNT_FALLBACK)
-  if (!amountMatch) return null
-  const amount = toNumber(amountMatch[1])
-  if (!(amount > 0)) return null
+  const withoutBalance = body.replace(c.balance, ' ')
+  const found = matchAmount(withoutBalance, c, region)
+  if (!found || !(found.amount > 0)) return null
 
-  const debitIdx = withoutBalance.search(DEBIT_KEYWORDS)
-  const creditIdx = withoutBalance.search(CREDIT_KEYWORDS)
-  const hasRefundWord = REFUND_KEYWORDS.test(withoutBalance)
+  const debitIdx = withoutBalance.search(c.debit)
+  const creditIdx = withoutBalance.search(c.credit)
+  const hasRefundWord = c.refund.test(withoutBalance)
 
   let type = null
   if (hasRefundWord && (creditIdx !== -1 || /refund|reversal|reversed/i.test(withoutBalance))) {
@@ -117,11 +160,11 @@ export const parseSmsTransaction = (sender, body, timestamp) => {
   }
   if (!type) return null
 
-  const merchant = extractMerchant(withoutBalance, type)
-  const vpa = extractVpa(withoutBalance)
+  const merchant = extractMerchant(withoutBalance, type, region)
 
   return {
-    amount,
+    amount: found.amount,
+    currency: found.currency,
     merchant: merchant || 'Unknown Vendor',
     type,
     timestamp,
@@ -130,7 +173,7 @@ export const parseSmsTransaction = (sender, body, timestamp) => {
     needs_review: !merchant,
     external_id: smsExternalId(sender, timestamp, body),
     last4: extractLast4(withoutBalance),
-    payment_mode: detectPaymentMode(withoutBalance),
-    vpa,
+    payment_mode: detectPaymentMode(withoutBalance, region),
+    vpa: extractVpa(withoutBalance, region),
   }
 }

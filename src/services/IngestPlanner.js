@@ -1,6 +1,7 @@
 import { parseSmsTransaction } from './RegexEngine'
 import { categorize } from './RuleEngine'
 import { looksLikeTransfer } from './TransferDetector'
+import { homeCurrency } from '../regions'
 
 export const DEDUPE_WINDOW_MS = 2 * 60 * 60 * 1000
 export const REFUND_LINK_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
@@ -86,6 +87,7 @@ export const planIngest = (messages, ctx) => {
       merchant_rule_id: cat.merchant_rule_id,
       last4: parsed.last4,
       payment_mode: parsed.payment_mode,
+      currency: parsed.currency && parsed.currency !== homeCurrency() ? parsed.currency : null,
       account_id: account ? account.id : null,
       card_id: card ? card.id : null,
       linked_transaction_id: null,

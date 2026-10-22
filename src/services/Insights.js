@@ -1,7 +1,7 @@
 import { spendEntries, aggregateSpend, incomeTotal, shareOf } from './Analytics'
+import { scaled, dateLocale, isForeignCurrency } from '../regions'
 
 const DAY = 86400000
-export const SMALL_PURCHASE = 200
 
 /** A period is a Monday-Sunday week or a calendar month: { mode, start, end(exclusive) }. */
 export const makePeriod = (mode, ts = Date.now()) => {
@@ -30,12 +30,12 @@ export const isCurrentPeriod = (p, now = Date.now()) => now >= p.start && now < 
 export const periodDays = (p) => Math.round((p.end - p.start) / DAY)
 
 export const periodLabel = (p) => {
-  if (p.mode === 'MONTH') return new Date(p.start).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+  if (p.mode === 'MONTH') return new Date(p.start).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' })
   const a = new Date(p.start)
   const b = new Date(p.end - DAY)
   const sameMonth = a.getMonth() === b.getMonth()
-  const left = a.toLocaleDateString('en-IN', sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'short' })
-  return `${left} – ${b.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  const left = a.toLocaleDateString(dateLocale(), sameMonth ? { day: 'numeric' } : { day: 'numeric', month: 'short' })
+  return `${left} – ${b.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' })}`
 }
 
 const pct = (delta, base) => (base > 0 ? Math.round((delta / base) * 100) : null)
@@ -75,7 +75,7 @@ export const analyzePeriod = (txs, period, now = Date.now()) => {
   for (let i = 0; i < days; i++) {
     const d = new Date(period.start)
     d.setDate(d.getDate() + i)
-    daily.push({ start: d.getTime(), label: d.toLocaleDateString('en-IN', { weekday: 'short' }).slice(0, 2), day: d.getDate(), amount: 0 })
+    daily.push({ start: d.getTime(), label: d.toLocaleDateString(dateLocale(), { weekday: 'short' }).slice(0, 2), day: d.getDate(), amount: 0 })
   }
   const debits = entries.filter(e => e.amount > 0)
   for (const e of entries) {
@@ -88,13 +88,14 @@ export const analyzePeriod = (txs, period, now = Date.now()) => {
   let weekend = 0
   let weekday = 0
   const tod = { morning: 0, afternoon: 0, evening: 0, night: 0 }
-  const small = { count: 0, total: 0, share: 0, threshold: SMALL_PURCHASE }
+  const smallLimit = scaled(200) // a "small purchase", sized for the home currency
+  const small = { count: 0, total: 0, share: 0, threshold: smallLimit }
   for (const e of debits) {
     const dt = new Date(e.t.timestamp)
     if (dt.getDay() === 0 || dt.getDay() === 6) weekend += e.amount
     else weekday += e.amount
     tod[timeBucket(dt.getHours())] += e.amount
-    if (e.amount < SMALL_PURCHASE) { small.count++; small.total += e.amount }
+    if (e.amount < smallLimit) { small.count++; small.total += e.amount }
   }
   small.share = cur.total > 0 ? Math.round((small.total / cur.total) * 100) : 0
   const patternTotal = weekend + weekday
@@ -130,6 +131,7 @@ export const analyzePeriod = (txs, period, now = Date.now()) => {
       small,
     },
     top,
+    foreign: txs.filter(t => !t.is_deleted && t.timestamp >= period.start && t.timestamp < period.end && isForeignCurrency(t)).length,
   }
 }
 
@@ -149,7 +151,7 @@ export const monthlyTrend = (txs, endTs = Date.now(), months = 6) => {
     const p = shiftPeriod(makePeriod('MONTH', endTs), -i)
     out.push({
       start: p.start,
-      label: new Date(p.start).toLocaleDateString('en-IN', { month: 'short' }),
+      label: new Date(p.start).toLocaleDateString(dateLocale(), { month: 'short' }),
       total: aggregateSpend(txs, p.start, p.end).total,
       income: incomeTotal(txs, p.start, p.end),
     })

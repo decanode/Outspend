@@ -16,7 +16,9 @@ export const DEFAULT_SETTINGS = {
   cardAlerts: {}, // cardId -> { cycle, level } already notified
   hasSeenSmsPrompt: false,
   lockEnabled: false, // app lock on (uses the phone's own screen lock)
-  numberStyle: 'IN', // IN = lakh/crore grouping, INTL = millions
+  region: null, // country preset id (null = guess from the phone until chosen)
+  currency: null, // only used for the "Other country" preset
+  numberStyle: 'AUTO', // AUTO = follow the country; IN = 12,34,567; INTL = 1,234,567
   alertsAnomaly: true, // unusual-spend and duplicate-charge alerts
   alertsBudget: true, // budget threshold alerts
   budgetAlerts: {}, // `${periodStart}:${budgetId}` -> level already notified

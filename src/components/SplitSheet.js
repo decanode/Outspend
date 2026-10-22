@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { View, Text } from 'react-native'
 import { Sheet, Field, Button, Chip } from './ui'
 import { COLORS } from '../theme/designSystem'
-import { formatINR } from '../services/Analytics'
+import { currencySymbolFor } from '../regions'
+import { formatMoney } from '../services/Analytics'
 import { myShareAfterSplit } from '../services/Planning'
 import { fetchSplitsFor, setSplits, clearSplits } from '../data/splits'
 import { parseAmount } from '../utils/format'
@@ -43,7 +44,7 @@ export default function SplitSheet({ transaction: tx, onClose, onChanged }) {
 
   const save = async () => {
     if (!filled.length) return setError('Add a name and an amount for at least one person.')
-    if (share === null) return setError(`Their parts can't add up to more than ${formatINR(tx.amount)}.`)
+    if (share === null) return setError(`Their parts can't add up to more than ${formatMoney(tx.amount)}.`)
     const ok = await setSplits(tx, filled.map(r => ({ person: r.person, amount: parseAmount(r.amount) })))
     if (!ok) return setError('Those amounts do not fit this payment.')
     if (onChanged) onChanged()
@@ -57,14 +58,14 @@ export default function SplitSheet({ transaction: tx, onClose, onChanged }) {
   }
 
   return (
-    <Sheet visible onClose={onClose} title={`Split ${formatINR(tx.amount)}`}>
+    <Sheet visible onClose={onClose} title={`Split ${formatMoney(tx.amount)}`}>
       <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginBottom: 12 }}>
         Add the people who owe you a part of this payment.
       </Text>
       {rows.map((r, i) => (
         <View key={i} style={{ flexDirection: 'row', marginBottom: 8 }}>
           <Field placeholder="Name" value={r.person} onChangeText={(v) => update(i, { person: v })} style={{ flex: 2, marginRight: 8 }} />
-          <Field placeholder="₹" keyboardType="decimal-pad" value={r.amount} onChangeText={(v) => update(i, { amount: v })} style={{ flex: 1 }} />
+          <Field placeholder={currencySymbolFor()} keyboardType="decimal-pad" value={r.amount} onChangeText={(v) => update(i, { amount: v })} style={{ flex: 1 }} />
         </View>
       ))}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
@@ -72,7 +73,7 @@ export default function SplitSheet({ transaction: tx, onClose, onChanged }) {
         <Chip label="Split equally" onPress={splitEqually} />
       </View>
       <Text style={{ color: share === null ? COLORS.coral : COLORS.emerald, marginVertical: 10 }}>
-        {share === null ? 'Parts are more than the payment.' : `Your share: ${formatINR(share)}`}
+        {share === null ? 'Parts are more than the payment.' : `Your share: ${formatMoney(share)}`}
       </Text>
       {error ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{error}</Text> : null}
       <Button title="Save split" onPress={save} />

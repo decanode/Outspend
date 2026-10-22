@@ -13,7 +13,7 @@ describe('csv', () => {
   test('full export keeps commas in merchant names', () => {
     const csv = toCsv([tx({ merchant: 'Ravi, Sons & Co', notes: 'split "dinner"' })])
     const lines = csv.trim().split('\r\n')
-    expect(lines[0]).toBe('Date,Merchant,Amount,Type,Category,Source,Account,Notes,Has receipt,Your share,Tags,Transfer')
+    expect(lines[0]).toBe('Date,Merchant,Amount,Currency,Type,Category,Source,Account,Notes,Has receipt,Your share,Tags,Transfer')
     expect(lines[1]).toContain('"Ravi, Sons & Co"')
     expect(lines[1]).toContain('"split ""dinner"""')
   })

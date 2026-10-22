@@ -3,7 +3,8 @@ import { makePeriod, shiftPeriod, periodLabel, analyzePeriod, runRate, monthlyTr
 import { budgetStatus, goalProgress, levelFor } from '../src/services/Budgets'
 import { detectAnomalies } from '../src/services/Anomaly'
 import { detectSalary, upcomingBills, owedByPerson, myShareAfterSplit, parseTags, tagsToString } from '../src/services/Planning'
-import { aggregateSpend, incomeTotal, shareOf, isTransfer, setNumberStyle, formatINR } from '../src/services/Analytics'
+import { aggregateSpend, incomeTotal, shareOf, isTransfer, formatMoney } from '../src/services/Analytics'
+import { setGroupingOverride } from '../src/regions'
 import { encryptText, decryptText, toBase64, fromBase64 } from '../src/services/BackupCrypto'
 import { planIngest } from '../src/services/IngestPlanner'
 import { randomBytes } from '@noble/hashes/utils.js'
@@ -296,9 +297,9 @@ describe('salary, bills, splits, tags', () => {
 
 describe('number format', () => {
   test('lakh grouping vs international', () => {
-    setNumberStyle('IN'); expect(formatINR(1234567)).toBe('₹12,34,567')
-    setNumberStyle('INTL'); expect(formatINR(1234567)).toBe('₹1,234,567')
-    setNumberStyle('IN')
+    setGroupingOverride('lakh'); expect(formatMoney(1234567)).toBe('₹12,34,567')
+    setGroupingOverride('standard'); expect(formatMoney(1234567)).toBe('₹1,234,567')
+    setGroupingOverride(null)
   })
 })
 

@@ -1,4 +1,5 @@
 import { addCycle } from './SubscriptionDetector'
+import { scaled } from '../regions'
 
 const DAY = 86400000
 const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime() }
@@ -17,7 +18,7 @@ const median = (nums) => {
 export const detectSalary = (txs, now = Date.now()) => {
   const groups = new Map()
   for (const t of txs) {
-    if (t.is_deleted || t.type !== 'CREDIT' || t.transfer === 'AUTO' || t.transfer === 'USER' || t.amount < 5000) continue
+    if (t.is_deleted || t.type !== 'CREDIT' || t.transfer === 'AUTO' || t.transfer === 'USER' || t.amount < scaled(5000)) continue
     const key = norm(t.merchant)
     if (!key || key === 'unknownvendor') continue
     if (!groups.has(key)) groups.set(key, [])

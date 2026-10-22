@@ -6,7 +6,8 @@ import TransactionForm from './TransactionForm'
 import CategoryPicker from './CategoryPicker'
 import CameraVault from '../screens/CameraVault'
 import { COLORS } from '../theme/designSystem'
-import { formatINR, isTransfer } from '../services/Analytics'
+import { formatMoney, isTransfer } from '../services/Analytics'
+import { homeCurrency } from '../regions'
 import { formatDateTime, SOURCE_LABELS } from '../utils/format'
 import { updateTransaction, attachReceipt } from '../data/transactions'
 import { setTransferFlag } from '../data/transfers'
@@ -51,16 +52,17 @@ function TransactionDetail({ transaction: tx, onClose, onDelete }) {
   return (
     <Sheet visible onClose={onClose} title={tx.merchant}>
       <Text style={[styles.amount, { color: income ? COLORS.emerald : COLORS.coral }]}>
-        {income ? '+' : '-'}{formatINR(tx.amount)}
+        {income ? '+' : '-'}{formatMoney(tx.amount, tx.currency)}
       </Text>
       <Row label="Date" value={formatDateTime(tx.timestamp)} />
       <Row label="Type" value={tx.type} />
+      <Row label="Currency" value={tx.currency && tx.currency !== homeCurrency() ? `${tx.currency} (not counted in your ${homeCurrency()} totals)` : null} />
       <Row label="Category" value={tx.category || 'Uncategorised'} />
       <Row label="Source" value={SOURCE_LABELS[tx.source] || tx.source} />
       <Row label="Payment mode" value={tx.payment_mode} />
       <Row label="Account / card" value={tx.last4 ? `••${tx.last4}` : null} />
       <Row label="Tags" value={tx.tags ? tx.tags.split(',').map(t => `#${t}`).join(' ') : null} />
-      <Row label="Your share" value={tx.my_share !== null && tx.my_share !== undefined ? formatINR(tx.my_share) : null} />
+      <Row label="Your share" value={tx.my_share !== null && tx.my_share !== undefined ? formatMoney(tx.my_share) : null} />
       <Row label="Transfer" value={isTransfer(tx) ? (tx.transfer === 'USER' ? 'Yes (you marked it)' : 'Yes (detected), not counted as spending') : null} />
       <Row label="Notes" value={tx.notes} />
       {tx.raw_text ? (

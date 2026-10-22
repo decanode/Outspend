@@ -4,7 +4,7 @@ import withObservables from '@nozbe/with-observables'
 import { Q } from '@nozbe/watermelondb'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { categoryColor } from '../constants/categories'
-import { aggregateSpend, formatINR } from '../services/Analytics'
+import { aggregateSpend, formatMoney } from '../services/Analytics'
 import { makePeriod, averageSurplus } from '../services/Insights'
 import { budgetStatus, goalProgress } from '../services/Budgets'
 import { detectSalary, upcomingBills, owedByPerson } from '../services/Planning'
@@ -49,7 +49,7 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
   }
 
   const settle = (p) =>
-    Alert.alert(`Settle with ${p.person}?`, `Mark ${formatINR(p.owed)} (${p.count} payment${p.count === 1 ? '' : 's'}) as received.`, [
+    Alert.alert(`Settle with ${p.person}?`, `Mark ${formatMoney(p.owed)} (${p.count} payment${p.count === 1 ? '' : 's'}) as received.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Mark settled', onPress: () => settlePerson(p.person) },
     ])
@@ -63,7 +63,7 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
         {salary ? (
           <Card>
             <Text style={styles.title}>{salary.daysUntil === 0 ? 'Payday is today' : salary.daysUntil === 1 ? 'Payday is tomorrow' : `Payday in ${salary.daysUntil} days`}</Text>
-            <Text style={styles.sub}>About {formatINR(Math.round(salary.amount))} from {salary.merchant}, around the {salary.day}{ordinal(salary.day)} of each month.</Text>
+            <Text style={styles.sub}>About {formatMoney(Math.round(salary.amount))} from {salary.merchant}, around the {salary.day}{ordinal(salary.day)} of each month.</Text>
           </Card>
         ) : null}
 
@@ -79,11 +79,11 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
                     <Text style={styles.title}>Monthly cap</Text>
                     <Pill text={o.level === 'over' ? 'Over budget' : o.level === 'warning' ? 'Close to the limit' : 'On track'} color={LEVEL_COLOR[o.level]} />
                   </View>
-                  <HBar label={`${formatINR(o.spent)} of ${formatINR(o.amount)}`} value={`${Math.round(o.ratio * 100)}%`} ratio={o.ratio} color={LEVEL_COLOR[o.level]} />
+                  <HBar label={`${formatMoney(o.spent)} of ${formatMoney(o.amount)}`} value={`${Math.round(o.ratio * 100)}%`} ratio={o.ratio} color={LEVEL_COLOR[o.level]} />
                   <Text style={styles.sub}>
                     {o.level === 'over'
-                      ? `${formatINR(-o.remaining)} over the cap.`
-                      : `You can spend about ${formatINR(Math.round(o.dailyAllowance))} a day for the next ${status.daysLeft} day${status.daysLeft === 1 ? '' : 's'}.`}
+                      ? `${formatMoney(-o.remaining)} over the cap.`
+                      : `You can spend about ${formatMoney(Math.round(o.dailyAllowance))} a day for the next ${status.daysLeft} day${status.daysLeft === 1 ? '' : 's'}.`}
                   </Text>
                 </TouchableOpacity>
               </Card>
@@ -91,8 +91,8 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
             {status.categories.map(c => (
               <TouchableOpacity key={c.id} onPress={() => setBudgetForm(budgets.find(b => b.id === c.id))}>
                 <Card>
-                  <HBar label={c.category} value={`${formatINR(c.spent)} / ${formatINR(c.amount)}`} ratio={c.ratio} color={c.level === 'ok' ? categoryColor(c.category) : LEVEL_COLOR[c.level]}
-                    right={c.level === 'over' ? `${formatINR(-c.remaining)} over` : `${formatINR(c.remaining)} left`} />
+                  <HBar label={c.category} value={`${formatMoney(c.spent)} / ${formatMoney(c.amount)}`} ratio={c.ratio} color={c.level === 'ok' ? categoryColor(c.category) : LEVEL_COLOR[c.level]}
+                    right={c.level === 'over' ? `${formatMoney(-c.remaining)} over` : `${formatMoney(c.remaining)} left`} />
                 </Card>
               </TouchableOpacity>
             ))}
@@ -110,18 +110,18 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
                 <Text style={styles.title}>{g.name}</Text>
                 <Text style={styles.link} onPress={() => setGoalForm(g)}>Edit</Text>
               </View>
-              <HBar label={`${formatINR(g.saved_amount)} of ${formatINR(g.target_amount)}`} value={`${p.pct}%`} ratio={p.pct / 100} color={p.done ? COLORS.emerald : COLORS.blue} />
+              <HBar label={`${formatMoney(g.saved_amount)} of ${formatMoney(g.target_amount)}`} value={`${p.pct}%`} ratio={p.pct / 100} color={p.done ? COLORS.emerald : COLORS.blue} />
               <Text style={styles.sub}>
                 {p.done ? 'Goal reached 🎉'
-                  : p.overdue ? `Target date passed with ${formatINR(p.remaining)} still to go.`
-                  : `${formatINR(Math.ceil(p.requiredPerMonth))}/month needed until ${formatDate(g.target_date)}. ${surplus > 0 ? `You typically keep about ${formatINR(Math.round(surplus))}/month, so you are ${p.onTrack ? 'on track' : 'behind'}.` : 'Add income and spending history to see if you are on track.'}`}
+                  : p.overdue ? `Target date passed with ${formatMoney(p.remaining)} still to go.`
+                  : `${formatMoney(Math.ceil(p.requiredPerMonth))}/month needed until ${formatDate(g.target_date)}. ${surplus > 0 ? `You typically keep about ${formatMoney(Math.round(surplus))}/month, so you are ${p.onTrack ? 'on track' : 'behind'}.` : 'Add income and spending history to see if you are on track.'}`}
               </Text>
               {!p.done ? <Button title="Add money" variant="ghost" onPress={() => setMoneyGoal(g)} style={{ alignSelf: 'flex-start' }} /> : null}
             </Card>
           )
         })}
 
-        <SectionTitle right={bills.dueThisWeek > 0 ? <Pill text={`Due this week ${formatINR(bills.dueThisWeek)}`} color={COLORS.amber} /> : null}>Upcoming bills</SectionTitle>
+        <SectionTitle right={bills.dueThisWeek > 0 ? <Pill text={`Due this week ${formatMoney(bills.dueThisWeek)}`} color={COLORS.amber} /> : null}>Upcoming bills</SectionTitle>
         {bills.groups.length === 0 ? (
           <EmptyState title="Nothing due in the next 30 days" hint="Subscriptions you track in the Accounts tab show up here." />
         ) : (
@@ -132,16 +132,16 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
                 {g.items.map(it => (
                   <View key={`${it.id}${it.date}`} style={styles.rowBetween}>
                     <Text style={styles.billName}>{it.name}</Text>
-                    <Text style={styles.billAmount}>{formatINR(it.amount)}</Text>
+                    <Text style={styles.billAmount}>{formatMoney(it.amount)}</Text>
                   </View>
                 ))}
               </View>
             ))}
-            <Text style={styles.sub}>{formatINR(bills.total)} in total over the next 30 days.</Text>
+            <Text style={styles.sub}>{formatMoney(bills.total)} in total over the next 30 days.</Text>
           </Card>
         )}
 
-        <SectionTitle right={owed.total > 0 ? <Pill text={formatINR(owed.total)} color={COLORS.emerald} /> : null}>Owed to you</SectionTitle>
+        <SectionTitle right={owed.total > 0 ? <Pill text={formatMoney(owed.total)} color={COLORS.emerald} /> : null}>Owed to you</SectionTitle>
         {owed.people.length === 0 ? (
           <EmptyState title="Nobody owes you anything" hint="Open a payment in the Ledger and choose Split to record who shared it." />
         ) : (
@@ -153,7 +153,7 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
                   <Text style={styles.sub}>{p.count} payment{p.count === 1 ? '' : 's'}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={[styles.title, { color: COLORS.emerald }]}>{formatINR(p.owed)}</Text>
+                  <Text style={[styles.title, { color: COLORS.emerald }]}>{formatMoney(p.owed)}</Text>
                   <Text style={styles.link} onPress={() => settle(p)}>Settle</Text>
                 </View>
               </View>

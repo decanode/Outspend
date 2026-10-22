@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
 import { Text, View } from 'react-native'
 import { Sheet, Field, Button, Chip } from './ui'
+import { currencySymbolFor } from '../regions'
 import { COLORS } from '../theme/designSystem'
-import { parseAmount, parseDateInput, toDateInput } from '../utils/format'
+import { parseAmount, parseSignedAmount, parseDateInput, toDateInput } from '../utils/format'
 
 const ACCOUNT_TYPES = [['SAVINGS', 'Savings'], ['WALLET', 'Wallet'], ['CASH', 'Cash']]
 
@@ -19,7 +20,7 @@ function AccountFormBody({ visible, onClose, onSave, onDelete, account }) {
 
   const submit = () => {
     if (!name.trim()) return setError('Give the account a name.')
-    const bal = balance.trim() === '' ? 0 : parseFloat(balance.replace(/[₹,\s]/g, ''))
+    const bal = balance.trim() === '' ? 0 : parseSignedAmount(balance)
     if (!Number.isFinite(bal)) return setError('Balance must be a number.')
     if (!validLast4(last4)) return setError('Last 4 digits must be exactly 4 numbers.')
     onSave({ name, type, balance: bal, last4: last4 || null })
@@ -31,7 +32,7 @@ function AccountFormBody({ visible, onClose, onSave, onDelete, account }) {
       <View style={{ flexDirection: 'row', marginBottom: 8 }}>
         {ACCOUNT_TYPES.map(([k, l]) => <Chip key={k} label={l} selected={type === k} onPress={() => setType(k)} />)}
       </View>
-      {!account && <Field label="Opening balance (₹)" value={balance} onChangeText={setBalance} keyboardType="decimal-pad" placeholder="0" style={{ marginBottom: 12 }} />}
+      {!account && <Field label={`Opening balance (${currencySymbolFor()})`} value={balance} onChangeText={setBalance} keyboardType="decimal-pad" placeholder="0" style={{ marginBottom: 12 }} />}
       <Field label="Last 4 digits (matches bank SMS to this account)" value={last4} onChangeText={setLast4} keyboardType="number-pad" maxLength={4} style={{ marginBottom: 12 }} />
       {error ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{error}</Text> : null}
       <Button title="Save" onPress={submit} />
@@ -63,7 +64,7 @@ function CardFormBody({ visible, onClose, onSave, onDelete, card }) {
   return (
     <Sheet visible={visible} onClose={onClose} title={card ? 'Edit card' : 'Add credit card'}>
       <Field label="Name" value={name} onChangeText={setName} placeholder="SBI Cashback" style={{ marginBottom: 12 }} />
-      <Field label="Credit limit (₹)" value={limit} onChangeText={setLimit} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
+      <Field label={`Credit limit (${currencySymbolFor()})`} value={limit} onChangeText={setLimit} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
       <Field label="Last 4 digits" value={last4} onChangeText={setLast4} keyboardType="number-pad" maxLength={4} style={{ marginBottom: 12 }} />
       <Field label="Billing cycle starts on day (1-28)" value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={{ marginBottom: 12 }} />
       {error ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{error}</Text> : null}
@@ -95,7 +96,7 @@ function SubscriptionFormBody({ visible, onClose, onSave, subscription }) {
   return (
     <Sheet visible={visible} onClose={onClose} title={subscription ? 'Edit subscription' : 'Add subscription'}>
       <Field label="Name" value={name} onChangeText={setName} placeholder="Netflix" style={{ marginBottom: 12 }} />
-      <Field label="Amount (₹)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
+      <Field label={`Amount (${currencySymbolFor()})`} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
       <View style={{ flexDirection: 'row', marginBottom: 8 }}>
         <Chip label="Monthly" selected={cycle === 'MONTHLY'} onPress={() => setCycle('MONTHLY')} />
         <Chip label="Yearly" selected={cycle === 'YEARLY'} onPress={() => setCycle('YEARLY')} />

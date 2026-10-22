@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react'
 import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { exportTransactionsToCSV } from '../services/ExportService'
-import { loadOffer, subscribe, restore, startPurchaseListeners, FALLBACK_PRICE } from '../services/BillingService'
+import { loadOffer, subscribe, restore, startPurchaseListeners } from '../services/BillingService'
 import { Button } from '../components/ui'
 import { useApp } from '../AppContext'
 
 export default function Paywall() {
   const { refreshAccess } = useApp()
-  const [offer, setOffer] = useState({ price: FALLBACK_PRICE, offerToken: null })
+  const [offer, setOffer] = useState({ price: null, offerToken: null })
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export default function Paywall() {
       <View style={[GLASS_STYLES.card, styles.card]}>
         <Text style={styles.title}>Total financial clarity.{'\n'}Zero data tracking.</Text>
         <Text style={styles.subtitle}>
-          Your trial has ended. To keep your data strictly on your device, subscribe for {offer.price}.
+          Your trial has ended. To keep your data strictly on your device, subscribe{offer.price ? ` for ${offer.price}` : ''}.
         </Text>
         {busy ? <ActivityIndicator color={COLORS.emerald} style={{ marginBottom: 16 }} /> : null}
         <Button title="Subscribe via Google Play" onPress={handleSubscribe} disabled={busy} style={styles.full} />

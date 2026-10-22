@@ -302,3 +302,36 @@ describe('observation', () => {
     expect((await p)[0].balance).toBe(99)
   })
 })
+
+import { setRegion } from '../src/regions'
+
+describe('other countries end to end', () => {
+  afterEach(() => setRegion('IN'))
+
+  test('a US message is parsed, categorised and stored in the home currency (no currency tag)', async () => {
+    setRegion('US')
+    const r = await ingestMessages([sms('Chase: You made a $45.67 debit card purchase at STARBUCKS on 10/05.', T0, 'CHASE')])
+    expect(r.created).toBe(1)
+    expect((await all())[0]).toMatchObject({ amount: 45.67, merchant: 'Starbucks', category: 'Food & Dining', currency: null })
+  })
+
+  test('a different currency is stored with its code and stays out of totals', async () => {
+    setRegion('IN')
+    await ingestMessages([
+      sms('Spent USD 20.00 On HDFC Bank Card 4321 At OPENAI On 2026-10-09', T0 - 1000),
+      sms('Paid Rs.300 to Swiggy on 1-1-26', T0),
+    ])
+    const rows = (await all()).map(toPlain)
+    expect(rows.find(t => t.amount === 20).currency).toBe('USD')
+    expect(rows.find(t => t.amount === 300).currency).toBeNull()
+    expect(aggregateSpend(rows, T0 - 1e7, T0 + 1e7).total).toBe(300)
+  })
+
+  test('currency survives backup and restore', async () => {
+    await ingestMessages([sms('Spent USD 20.00 On HDFC Bank Card 4321 At OPENAI On 2026-10-09', T0)])
+    const backup = JSON.parse(JSON.stringify(await buildBackupObject()))
+    await wipeAllData()
+    await restoreBackupObject(backup)
+    expect((await all())[0].currency).toBe('USD')
+  })
+})

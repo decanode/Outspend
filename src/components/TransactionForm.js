@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { View, Text } from 'react-native'
 import { Sheet, Chip, Field, Button } from './ui'
 import { CATEGORIES } from '../constants/categories'
+import { currencySymbolFor } from '../regions'
 import { COLORS } from '../theme/designSystem'
 import { col } from '../data/util'
 import { parseAmount, parseDateInput, toDateInput } from '../utils/format'
@@ -68,7 +69,7 @@ function TransactionFormBody({ visible, onClose, onSave, initial = {}, title = '
         <Chip label="Expense" selected={type === 'DEBIT'} color={COLORS.coral} onPress={() => setType('DEBIT')} />
         <Chip label="Income" selected={type === 'CREDIT'} onPress={() => { setType('CREDIT'); setCardId(null) }} />
       </View>
-      <Field label="Amount (₹)" keyboardType="decimal-pad" value={amount} onChangeText={setAmount} placeholder="0" style={{ marginBottom: 12 }} />
+      <Field label={`Amount (${currencySymbolFor()})`} keyboardType="decimal-pad" value={amount} onChangeText={setAmount} placeholder="0" style={{ marginBottom: 12 }} />
       <Field label="Merchant / person" value={merchant} onChangeText={setMerchant} placeholder="e.g. Swiggy" style={{ marginBottom: 12 }} />
       <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginBottom: 6 }}>Category</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 4 }}>

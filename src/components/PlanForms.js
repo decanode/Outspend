@@ -3,8 +3,9 @@ import { Text, View } from 'react-native'
 import { Sheet, Field, Button, Chip } from './ui'
 import { CATEGORIES } from '../constants/categories'
 import { OVERALL } from '../services/Budgets'
+import { currencySymbolFor } from '../regions'
 import { COLORS } from '../theme/designSystem'
-import { parseAmount, parseDateInput, toDateInput } from '../utils/format'
+import { parseAmount, parseSignedAmount, parseDateInput, toDateInput } from '../utils/format'
 
 const Err = ({ text }) => (text ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{text}</Text> : null)
 
@@ -34,7 +35,7 @@ function BudgetFormBody({ visible, onClose, onSave, onDelete, budget, takenCateg
       )}
       {budget ? <Text style={{ color: COLORS.textPrimary, marginBottom: 12 }}>{budget.category === OVERALL ? 'Overall monthly cap' : budget.category}</Text> : null}
       {!budget && takenCategories.includes(category) ? <Text style={{ color: COLORS.textSecondary, fontSize: 12, marginBottom: 8 }}>This category already has a budget; saving replaces its amount.</Text> : null}
-      <Field label="Monthly amount (₹)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
+      <Field label={`Monthly amount (${currencySymbolFor()})`} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
       <Err text={error} />
       <Button title="Save" onPress={submit} />
       {budget && onDelete ? <Button title="Delete budget" variant="danger" onPress={onDelete} style={{ marginTop: 8 }} /> : null}
@@ -55,7 +56,7 @@ function GoalFormBody({ visible, onClose, onSave, onDelete, goal }) {
   const submit = () => {
     const t = parseAmount(target)
     const when = parseDateInput(date, new Date().setHours(12, 0, 0, 0))
-    const s = saved.trim() === '' ? 0 : parseFloat(saved.replace(/[₹,\s]/g, ''))
+    const s = saved.trim() === '' ? 0 : parseSignedAmount(saved)
     if (!name.trim()) return setError('Name your goal.')
     if (!t) return setError('Enter the target amount.')
     if (!Number.isFinite(s) || s < 0) return setError('Saved so far must be 0 or more.')
@@ -66,8 +67,8 @@ function GoalFormBody({ visible, onClose, onSave, onDelete, goal }) {
   return (
     <Sheet visible={visible} onClose={onClose} title={goal ? 'Edit goal' : 'New savings goal'}>
       <Field label="Goal" value={name} onChangeText={setName} placeholder="New laptop" style={{ marginBottom: 12 }} />
-      <Field label="Target amount (₹)" value={target} onChangeText={setTarget} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
-      <Field label="Saved so far (₹)" value={saved} onChangeText={setSaved} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
+      <Field label={`Target amount (${currencySymbolFor()})`} value={target} onChangeText={setTarget} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
+      <Field label={`Saved so far (${currencySymbolFor()})`} value={saved} onChangeText={setSaved} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
       <Field label="Target date (YYYY-MM-DD)" value={date} onChangeText={setDate} style={{ marginBottom: 12 }} />
       <Err text={error} />
       <Button title="Save" onPress={submit} />
@@ -94,7 +95,7 @@ function AddMoneyFormBody({ visible, onClose, onSave, goal }) {
         <Chip label="Add money" selected={!withdraw} onPress={() => setWithdraw(false)} />
         <Chip label="Take out" selected={withdraw} color={COLORS.coral} onPress={() => setWithdraw(true)} />
       </View>
-      <Field label="Amount (₹)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
+      <Field label={`Amount (${currencySymbolFor()})`} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
       <Err text={error} />
       <Button title="Save" onPress={submit} />
       <Button title="Cancel" variant="ghost" onPress={onClose} style={{ marginTop: 4 }} />

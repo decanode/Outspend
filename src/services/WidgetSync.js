@@ -2,7 +2,7 @@ import { updateWidget } from '../native/Widget'
 import { fetchTransactionsBetween } from '../data/transactions'
 import { fetchBudgets } from '../data/budgets'
 import { toPlain } from '../data/util'
-import { aggregateSpend, formatINR } from './Analytics'
+import { aggregateSpend, formatMoney } from './Analytics'
 import { budgetStatus } from './Budgets'
 import { makePeriod } from './Insights'
 
@@ -17,7 +17,7 @@ export const refreshWidget = async () => {
   const budgets = (await fetchBudgets()).map(toPlain)
   const status = budgetStatus(budgets, aggregateSpend(txs, month.start, month.end), month.end, now)
   const left = status.overall
-    ? `${formatINR(Math.max(status.overall.remaining, 0))} left this month`
+    ? `${formatMoney(Math.max(status.overall.remaining, 0))} left this month`
     : 'Set a budget in the Plan tab'
-  await updateWidget(`Today ${formatINR(todaySpend)}`, left)
+  await updateWidget(`Today ${formatMoney(todaySpend)}`, left)
 }

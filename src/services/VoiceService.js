@@ -1,4 +1,5 @@
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
+import { getRegion } from '../regions'
 
 /**
  * Thin wrapper over expo-speech-recognition for one-shot expense dictation.
@@ -31,7 +32,7 @@ export class VoiceService {
         if (this.onError) this.onError(event.error)
       })
     )
-    ExpoSpeechRecognitionModule.start({ lang: 'en-IN', interimResults: false, maxAlternatives: 1 })
+    ExpoSpeechRecognitionModule.start({ lang: getRegion().speechLang, interimResults: false, maxAlternatives: 1 })
     return true
   }
 

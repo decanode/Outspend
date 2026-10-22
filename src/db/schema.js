@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export default appSchema({
-  version: 3,
+  version: 4,
   tables: [
     tableSchema({
       name: 'transactions',
@@ -27,6 +27,7 @@ export default appSchema({
         { name: 'transfer', type: 'string', isOptional: true }, // AUTO | USER | NOT (null = not evaluated)
         { name: 'tags', type: 'string', isOptional: true }, // comma separated, lowercase
         { name: 'my_share', type: 'number', isOptional: true }, // your part of a split payment
+        { name: 'currency', type: 'string', isOptional: true }, // ISO code when NOT the home currency (null = home)
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ]

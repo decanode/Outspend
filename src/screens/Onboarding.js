@@ -9,6 +9,8 @@ import { importHistory } from '../services/SmsIngest'
 import { ensureTrialStarted } from '../services/BillingService'
 import { pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
 import { PassphraseSheet } from '../components/SecuritySheets'
+import RegionPicker from '../components/RegionPicker'
+import { applyRegionSettings, getRegion, regionById, currencySymbol } from '../regions'
 
 const RANGES = [[30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year']]
 
@@ -20,6 +22,8 @@ export default function Onboarding({ onComplete }) {
   const [importing, setImporting] = useState(false)
   const [progress, setProgress] = useState(null)
   const [restoreText, setRestoreText] = useState(null)
+  const [pickRegion, setPickRegion] = useState(false)
+  const [region, setRegionState] = useState(() => getRegion())
 
   const askSms = async () => {
     const status = await requestSmsPermission()
@@ -31,7 +35,7 @@ export default function Onboarding({ onComplete }) {
   const finish = async () => {
     setImporting(true)
     const startDate = Date.now() - days * 86400000
-    await updateSettings({ onboardingStartDate: startDate, isOnboarded: true })
+    await updateSettings({ onboardingStartDate: startDate, isOnboarded: true, region: region.id, currency: region.customCurrency ? region.currency : null })
     await ensureTrialStarted()
     try {
       await importHistory({ onProgress: setProgress })
@@ -62,6 +66,10 @@ export default function Onboarding({ onComplete }) {
           <>
             <Text style={styles.title}>100% private.</Text>
             <Text style={styles.subtitle}>Outspend never sends your data to any server. All processing happens right here on your phone.</Text>
+            <Text style={[styles.subtitle, { marginBottom: 12 }]}>
+              Country: {region.name} ({currencySymbol(region.currency)} {region.currency})
+            </Text>
+            <Button title="Change country or currency" variant="ghost" onPress={() => setPickRegion(true)} style={styles.full} />
             <Button title="Next" onPress={() => setStep(2)} style={styles.full} />
             <Button title="Restore from a backup" variant="ghost" style={styles.full}
               onPress={async () => { try { const t = await pickBackupFile(); if (t) setRestoreText(t) } catch { /* picker cancelled or unreadable */ } }} />
@@ -96,6 +104,14 @@ export default function Onboarding({ onComplete }) {
           </>
         )}
       </View>
+      <RegionPicker visible={pickRegion} initialRegion={region.id} initialCurrency={region.currency} onClose={() => setPickRegion(false)}
+        onSave={async (id, currency) => {
+          const next = applyRegionSettings({ region: id, currency, numberStyle: 'AUTO' })
+          await updateSettings({ region: id, currency, numberStyle: 'AUTO' })
+          setRegionState(next)
+          setDays(regionById(id).importDays)
+          setPickRegion(false)
+        }} />
       {restoreText ? (
         <PassphraseSheet mode="restore" onClose={() => setRestoreText(null)}
           onSubmit={async (pass) => { await restoreEncryptedBackup(restoreText, pass); await ensureTrialStarted(); onComplete() }} />

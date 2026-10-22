@@ -16,23 +16,14 @@ export const CATEGORY_NAMES = CATEGORIES.map(c => c.name)
 export const categoryColor = (name) =>
   (CATEGORIES.find(c => c.name === name) || { color: '#64748b' }).color
 
-// Lowercase keyword -> category. Used as the fallback after user merchant rules.
+// Merchant keywords that mean the same thing everywhere. Country-specific merchants live in the
+// region's SMS profile (src/regions/profiles.js). Lowercase keyword -> category.
 export const KEYWORD_CATEGORIES = [
-  ['swiggy', 'Food & Dining'], ['zomato', 'Food & Dining'], ['dominos', 'Food & Dining'],
-  ['mcdonald', 'Food & Dining'], ['starbucks', 'Food & Dining'], ['restaurant', 'Food & Dining'],
-  ['cafe', 'Food & Dining'], ['bigbasket', 'Food & Dining'], ['blinkit', 'Food & Dining'],
-  ['zepto', 'Food & Dining'], ['instamart', 'Food & Dining'],
-  ['uber', 'Transport'], ['ola', 'Transport'], ['rapido', 'Transport'], ['irctc', 'Transport'],
-  ['redbus', 'Transport'], ['metro', 'Transport'], ['fastag', 'Transport'], ['petrol', 'Transport'],
-  ['fuel', 'Transport'],
-  ['netflix', 'Entertainment'], ['spotify', 'Entertainment'], ['hotstar', 'Entertainment'],
-  ['primevideo', 'Entertainment'], ['bookmyshow', 'Entertainment'], ['youtube', 'Entertainment'],
-  ['amazon', 'Shopping'], ['flipkart', 'Shopping'], ['myntra', 'Shopping'], ['ajio', 'Shopping'],
-  ['meesho', 'Shopping'],
-  ['airtel', 'Bills & Utilities'], ['jio', 'Bills & Utilities'], ['vodafone', 'Bills & Utilities'],
-  ['electricity', 'Bills & Utilities'], ['bescom', 'Bills & Utilities'], ['broadband', 'Bills & Utilities'],
-  ['recharge', 'Bills & Utilities'], ['gas', 'Bills & Utilities'],
-  ['pharmacy', 'Healthcare'], ['apollo', 'Healthcare'], ['hospital', 'Healthcare'],
-  ['medplus', 'Healthcare'], ['1mg', 'Healthcare'], ['pharmeasy', 'Healthcare'],
+  ['mcdonald', 'Food & Dining'], ['starbucks', 'Food & Dining'], ['restaurant', 'Food & Dining'], ['cafe', 'Food & Dining'],
+  ['uber', 'Transport'], ['metro', 'Transport'], ['petrol', 'Transport'], ['fuel', 'Transport'],
+  ['netflix', 'Entertainment'], ['spotify', 'Entertainment'], ['primevideo', 'Entertainment'], ['youtube', 'Entertainment'],
+  ['amazon', 'Shopping'],
+  ['electricity', 'Bills & Utilities'], ['broadband', 'Bills & Utilities'], ['recharge', 'Bills & Utilities'], ['gas', 'Bills & Utilities'],
+  ['pharmacy', 'Healthcare'], ['hospital', 'Healthcare'],
   ['rent', 'Housing'], ['maintenance', 'Housing'],
 ]

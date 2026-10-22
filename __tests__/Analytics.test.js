@@ -1,6 +1,6 @@
 import {
   aggregateSpend, accountBalance, cardSpend, cycleStart, dailySpend, monthBounds,
-  shiftMonth, utilisation, utilisationLevel, formatINR,
+  shiftMonth, utilisation, utilisationLevel, formatMoney,
 } from '../src/services/Analytics'
 
 const d = (y, m, day, h = 12) => new Date(y, m, day, h).getTime()
@@ -86,9 +86,9 @@ describe('accounts and cards', () => {
     expect(utilisationLevel(0.8)).toBe('warning')
     expect(utilisationLevel(0.96)).toBe('critical')
   })
-  test('formatINR', () => {
-    expect(formatINR(145000)).toBe('₹1,45,000')
-    expect(formatINR(75.5)).toBe('₹75.50')
+  test('formatMoney', () => {
+    expect(formatMoney(145000)).toBe('₹1,45,000')
+    expect(formatMoney(75.5)).toBe('₹75.50')
   })
 })
 

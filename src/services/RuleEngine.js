@@ -1,5 +1,6 @@
 import { KEYWORD_CATEGORIES } from '../constants/categories'
 import { extractVpa } from './RegexEngine'
+import { getRegion } from '../regions'
 
 export const UNKNOWN_VENDOR = 'Unknown Vendor'
 
@@ -26,10 +27,21 @@ export const ruleMatches = (rule, tx) => {
 
 export const findRule = (rules, tx) => rules.find(r => ruleMatches(r, tx)) || null
 
+// A keyword must start at a word boundary, and short ones must also end at one, so "tfl" does not
+// match inside "netflix" and "gas" does not match "vegas".
+const keywordRegexes = new Map()
+const keywordRegex = (kw) => {
+  if (!keywordRegexes.has(kw)) {
+    const k = escapeRegExp(kw.trim())
+    keywordRegexes.set(kw, new RegExp(`(?<![a-z0-9])${k}${kw.trim().length <= 4 ? '(?![a-z0-9])' : ''}`))
+  }
+  return keywordRegexes.get(kw)
+}
+
 export const keywordCategory = (text) => {
   const hay = (text || '').toLowerCase()
   if (!hay) return null
-  const hit = KEYWORD_CATEGORIES.find(([kw]) => hay.includes(kw))
+  const hit = [...getRegion().sms.keywordCategories, ...KEYWORD_CATEGORIES].find(([kw]) => keywordRegex(kw).test(hay))
   return hit ? hit[1] : null
 }
 

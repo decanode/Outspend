@@ -3,7 +3,7 @@ import { getSettings } from './Settings'
 
 // Tables in restore order. Rows keep their ids so links (refunds, splits, accounts) survive.
 const TABLES = ['transactions', 'merchant_rules', 'credit_cards', 'subscriptions', 'accounts', 'budgets', 'goals', 'splits']
-const SETTINGS_KEYS = ['onboardingStartDate', 'lastImportedTimestamp', 'dismissedSubscriptions', 'numberStyle', 'alertsAnomaly', 'alertsBudget']
+const SETTINGS_KEYS = ['onboardingStartDate', 'lastImportedTimestamp', 'dismissedSubscriptions', 'region', 'currency', 'numberStyle', 'alertsAnomaly', 'alertsBudget']
 
 const rowOf = (model) => {
   const row = { id: model.id }

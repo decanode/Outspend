@@ -7,7 +7,10 @@ import { getSettings, updateSettings, resetSettings } from '../services/Settings
 import { hasSmsPermission, requestSmsPermission, openAppSettings } from '../services/Permissions'
 import { importHistory, importInboxSince } from '../services/SmsIngest'
 import { wipeAllData } from '../data/transactions'
-import { monthBounds, setNumberStyle } from '../services/Analytics'
+import { monthBounds } from '../services/Analytics'
+import { applyRegionSettings, getRegion, currencySymbol } from '../regions'
+import RegionPicker from '../components/RegionPicker'
+import { col } from '../data/util'
 import { formatDateTime, formatDate } from '../utils/format'
 import { Button, Chip, Sheet } from '../components/ui'
 import { PassphraseSheet } from '../components/SecuritySheets'
@@ -34,14 +37,16 @@ export default function Settings() {
   const [billCats, setBillCats] = useState([])
   const [passSheet, setPassSheet] = useState(null) // 'create' | 'restore'
   const [restoreText, setRestoreText] = useState(null)
+  const [pickRegion, setPickRegion] = useState(false)
+  const [hasData, setHasData] = useState(false)
 
   const [tick, setTick] = useState(0)
   const reload = useCallback(() => setTick(t => t + 1), [])
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const [s, ok] = await Promise.all([getSettings(), hasSmsPermission()])
-      if (alive) { setSettings(s); setSmsOk(ok) }
+      const [s, ok, n] = await Promise.all([getSettings(), hasSmsPermission(), col('transactions').query().fetchCount()])
+      if (alive) { setSettings(s); setSmsOk(ok); setHasData(n > 0) }
     })()
     return () => { alive = false }
   }, [tick])
@@ -116,10 +121,16 @@ export default function Settings() {
     reload()
   }
 
-  const changeNumberStyle = async (style) => {
-    setNumberStyle(style)
-    setSettings(await updateSettings({ numberStyle: style }))
+  const applyPrefs = async (patch) => {
+    const next = await updateSettings(patch)
+    applyRegionSettings({ region: next.region || getRegion().id, currency: next.currency, numberStyle: next.numberStyle })
+    setSettings(next)
     bumpPrefs()
+  }
+  const changeNumberStyle = (style) => applyPrefs({ numberStyle: style })
+  const changeRegion = async (id, currency) => {
+    setPickRegion(false)
+    await applyPrefs({ region: id, currency })
   }
 
   const startRestore = () =>
@@ -190,12 +201,16 @@ export default function Settings() {
           </View>
         </View>
 
-        <Text style={styles.section}>Display</Text>
+        <Text style={styles.section}>Country & display</Text>
         <View style={[GLASS_STYLES.card, styles.card]}>
-          <Text style={styles.rowText}>Number format</Text>
-          <View style={{ flexDirection: 'row', marginTop: 8 }}>
-            <Chip label="₹12,34,567 (lakh)" selected={!settings || settings.numberStyle !== 'INTL'} onPress={() => changeNumberStyle('IN')} />
-            <Chip label="₹1,234,567" selected={!!settings && settings.numberStyle === 'INTL'} onPress={() => changeNumberStyle('INTL')} />
+          <Text style={styles.rowText}>{getRegion().name} · {currencySymbol(getRegion().currency)} {getRegion().currency}</Text>
+          <Text style={styles.hint}>Sets your currency, date format and how bank messages are read.</Text>
+          <Button title="Change country or currency" variant="ghost" onPress={() => setPickRegion(true)} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+          <Text style={[styles.rowText, { marginTop: 12 }]}>Number format</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 }}>
+            <Chip label="Follow country" selected={!settings || !settings.numberStyle || settings.numberStyle === 'AUTO'} onPress={() => changeNumberStyle('AUTO')} />
+            <Chip label="12,34,567 (lakh)" selected={!!settings && settings.numberStyle === 'IN'} onPress={() => changeNumberStyle('IN')} />
+            <Chip label="1,234,567" selected={!!settings && settings.numberStyle === 'INTL'} onPress={() => changeNumberStyle('INTL')} />
           </View>
         </View>
 
@@ -231,6 +246,9 @@ export default function Settings() {
         <Button title="Create PDF" onPress={exportBill} />
       </Sheet>
 
+      <RegionPicker visible={pickRegion} title="Country & currency" initialRegion={getRegion().id} initialCurrency={getRegion().currency}
+        warning={hasData ? 'Existing amounts keep their numbers and will be shown in the new currency; nothing is converted. Messages in another currency stay out of your totals.' : null}
+        onClose={() => setPickRegion(false)} onSave={changeRegion} />
       {passSheet === 'create' ? (
         <PassphraseSheet mode="create" onClose={() => setPassSheet(null)}
           onSubmit={async (pass) => { const c = await createEncryptedBackup(pass); setPassSheet(null); Alert.alert('Backup created', `${c.transactions} transactions saved. Keep the file and your passphrase safe.`) }} />

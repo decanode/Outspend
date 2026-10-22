@@ -25,6 +25,7 @@ export default class Transaction extends Model {
   @field('transfer') transfer
   @field('tags') tags
   @field('my_share') my_share
+  @field('currency') currency
   @field('created_at') created_at
   @field('updated_at') updated_at
 }

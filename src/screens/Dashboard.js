@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { VoiceService } from '../services/VoiceService'
 import { parseVoiceExpense } from '../services/VoiceParser'
-import { aggregateSpend, accountBalance, dailySpend, monthBounds, formatINR } from '../services/Analytics'
+import { aggregateSpend, accountBalance, dailySpend, monthBounds, formatMoney } from '../services/Analytics'
 import { budgetStatus } from '../services/Budgets'
 import { detectSalary } from '../services/Planning'
 import { observeBudgets } from '../data/budgets'
@@ -39,7 +39,7 @@ const NeedsAttentionCard = ({ transaction: tx }) => {
   const verb = tx.type === 'CREDIT' || tx.type === 'REFUND' ? 'received' : 'paid'
   return (
     <View style={[GLASS_STYLES.card, styles.carouselCard]}>
-      <Text style={styles.carouselText}>{formatINR(tx.amount)} {verb}{mode}. Who was this {verb === 'paid' ? 'to' : 'from'}?</Text>
+      <Text style={styles.carouselText}>{formatMoney(tx.amount)} {verb}{mode}. Who was this {verb === 'paid' ? 'to' : 'from'}?</Text>
       {tx.raw_text ? <Text style={styles.snippet} numberOfLines={2}>{tx.raw_text}</Text> : null}
       <Field placeholder="Merchant name" value={name} onChangeText={setName} style={{ marginBottom: 8 }} />
       <Chip label={category || 'Category (optional)'} selected={!!category} onPress={() => setPicking(true)} />
@@ -114,11 +114,11 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
         <View style={styles.header}>
           <Text style={styles.balanceLabel}>{hasAccounts ? 'Current balance' : 'Balance'}</Text>
           {hasAccounts ? (
-            <Text style={[styles.balanceValue, balance < 0 && { color: COLORS.coral }]}>{balance < 0 ? '-' : ''}{formatINR(balance)}</Text>
+            <Text style={[styles.balanceValue, balance < 0 && { color: COLORS.coral }]}>{balance < 0 ? '-' : ''}{formatMoney(balance)}</Text>
           ) : (
             <Text style={styles.noAccounts}>Add an account in the Accounts tab to see your balance.</Text>
           )}
-          <Text style={styles.monthSpend}>Spent this month: {formatINR(monthSpend)}</Text>
+          <Text style={styles.monthSpend}>Spent this month: {formatMoney(monthSpend)}</Text>
           {salary && salary.daysUntil <= 10 ? (
             <Text style={styles.monthSpend}>{salary.daysUntil === 0 ? 'Payday is today' : salary.daysUntil === 1 ? 'Payday is tomorrow' : `Payday in ${salary.daysUntil} days`}</Text>
           ) : null}
@@ -127,8 +127,8 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
         {budget ? (
           <View style={[GLASS_STYLES.card, styles.section]}>
             <HBar
-              label={budget.level === 'over' ? 'Over your monthly budget' : `You can spend about ${formatINR(Math.round(budget.dailyAllowance))} a day`}
-              value={`${formatINR(budget.spent)} / ${formatINR(budget.amount)}`}
+              label={budget.level === 'over' ? 'Over your monthly budget' : `You can spend about ${formatMoney(Math.round(budget.dailyAllowance))} a day`}
+              value={`${formatMoney(budget.spent)} / ${formatMoney(budget.amount)}`}
               ratio={budget.ratio}
               color={budget.level === 'over' ? COLORS.coral : budget.level === 'warning' ? COLORS.amber : COLORS.emerald}
             />
@@ -180,7 +180,7 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
                 <Text style={screenStyles.rowSub}>{formatDate(item.timestamp)}{item.category ? ` · ${item.category}` : ''}</Text>
               </View>
               <Text style={[screenStyles.amount, { color: item.type === 'DEBIT' ? COLORS.coral : COLORS.emerald }]}>
-                {item.type === 'DEBIT' ? '-' : '+'}{formatINR(item.amount)}
+                {item.type === 'DEBIT' ? '-' : '+'}{formatMoney(item.amount, item.currency)}
               </Text>
             </TouchableOpacity>
           ))}

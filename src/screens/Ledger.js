@@ -8,7 +8,8 @@ import { CATEGORIES, UNCATEGORIZED } from '../constants/categories'
 import { observeLiveTransactions, createTransaction, updateTransaction } from '../data/transactions'
 import { createRule } from '../data/rules'
 import { suggestPattern } from '../services/RuleEngine'
-import { formatINR, monthBounds, isTransfer, shareOf } from '../services/Analytics'
+import { formatMoney, monthBounds, isTransfer, shareOf } from '../services/Analytics'
+import { isForeignCurrency } from '../regions'
 import { parseTags } from '../services/Planning'
 import { afterChange } from '../services/PostChange'
 import { dayLabel, startOfDay } from '../utils/format'
@@ -56,12 +57,12 @@ const Row = React.memo(function Row({ item, onOpen, onCategory, onDelete }) {
         <View style={{ flex: 1 }}>
           <Text style={screenStyles.rowTitle} numberOfLines={1}>{item.merchant}</Text>
           <Text style={screenStyles.rowSub}>
-            {transfer ? '↔ Transfer' : item.category || UNCATEGORIZED} · {item.source === 'VERIFIED_SMS' ? 'SMS ✓' : item.source}{item.receipt_path ? ' · 🧾' : ''}{split ? ` · your share ${formatINR(item.my_share)}` : ''}
+            {transfer ? '↔ Transfer' : item.category || UNCATEGORIZED} · {item.source === 'VERIFIED_SMS' ? 'SMS ✓' : item.source}{item.receipt_path ? ' · 🧾' : ''}{split ? ` · your share ${formatMoney(item.my_share)}` : ''}
           </Text>
           {item.tags ? <Text style={styles.tags}>{item.tags.split(',').map(t => `#${t}`).join(' ')}</Text> : null}
         </View>
         <Text style={[screenStyles.amount, { color: credit ? COLORS.emerald : COLORS.coral }]}>
-          {credit ? '+' : '-'}{formatINR(item.amount)}
+          {credit ? '+' : '-'}{formatMoney(item.amount, item.currency)}
         </Text>
       </TouchableOpacity>
     </ReanimatedSwipeable>
@@ -104,7 +105,7 @@ const Ledger = ({ transactions }) => {
 
   // What the current filter adds up to, e.g. the full cost of a trip tag. Transfers never count.
   const spentInView = useMemo(() => filtered.reduce((sum, t) => {
-    if (isTransfer(t)) return sum
+    if (isTransfer(t) || isForeignCurrency(t)) return sum
     if (t.type === 'DEBIT') return sum + shareOf(t)
     return t.type === 'REFUND' ? sum - t.amount : sum
   }, 0), [filtered])
@@ -116,7 +117,7 @@ const Ledger = ({ transactions }) => {
       if (!map.has(key)) map.set(key, { key, title: dayLabel(t.timestamp), total: 0, data: [] })
       const s = map.get(key)
       s.data.push(t)
-      if (!isTransfer(t)) {
+      if (!isTransfer(t) && !isForeignCurrency(t)) {
         if (t.type === 'DEBIT') s.total += shareOf(t)
         else if (t.type === 'REFUND') s.total -= t.amount
       }
@@ -171,7 +172,7 @@ const Ledger = ({ transactions }) => {
       ) : null}
 
       <Text style={styles.summary}>
-        {filtered.length} transaction{filtered.length === 1 ? '' : 's'}{filtered.length ? ` · spent ${formatINR(Math.max(spentInView, 0))}` : ''}
+        {filtered.length} transaction{filtered.length === 1 ? '' : 's'}{filtered.length ? ` · spent ${formatMoney(Math.max(spentInView, 0))}` : ''}
       </Text>
 
       <SectionList
@@ -181,7 +182,7 @@ const Ledger = ({ transactions }) => {
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.sectionTotal}>{section.total > 0 ? `-${formatINR(section.total)}` : ''}</Text>
+            <Text style={styles.sectionTotal}>{section.total > 0 ? `-${formatMoney(section.total)}` : ''}</Text>
           </View>
         )}
         stickySectionHeadersEnabled={false}

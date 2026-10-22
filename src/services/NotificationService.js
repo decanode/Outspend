@@ -7,7 +7,7 @@ import { rollForward } from './SubscriptionDetector'
 import { fetchBudgets } from '../data/budgets'
 import { budgetStatus } from './Budgets'
 import { makePeriod } from './Insights'
-import { cardSpend, cycleStart, utilisation, utilisationLevel, formatINR, aggregateSpend } from './Analytics'
+import { cardSpend, cycleStart, utilisation, utilisationLevel, formatMoney, aggregateSpend } from './Analytics'
 import { getSettings, updateSettings } from './Settings'
 import { nameTransactionById } from '../data/naming'
 
@@ -83,7 +83,7 @@ export const scheduleSubscriptionReminder = async (sub) => {
   const id = await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Subscription renewal alert',
-      body: `Your ${sub.name} subscription of ${formatINR(sub.amount)} renews in ${REMINDER_LEAD_DAYS} days.`,
+      body: `Your ${sub.name} subscription of ${formatMoney(sub.amount)} renews in ${REMINDER_LEAD_DAYS} days.`,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -118,7 +118,7 @@ export const checkCardLimits = async () => {
     await Notifications.scheduleNotificationAsync({
       content: {
         title: level === 'critical' ? 'Credit limit almost reached' : 'Credit limit warning',
-        body: `${card.name} is at ${Math.round(ratio * 100)}% of its ${formatINR(card.limit)} limit.`,
+        body: `${card.name} is at ${Math.round(ratio * 100)}% of its ${formatMoney(card.limit)} limit.`,
       },
       trigger: null,
     })
@@ -156,7 +156,7 @@ export const notifyNeedsName = async (tx) => {
   const mode = tx.payment_mode ? ` via ${tx.payment_mode}` : ''
   return Notifications.scheduleNotificationAsync({
     content: {
-      title: `${formatINR(tx.amount)} ${incoming ? 'received' : 'paid'}${mode}`,
+      title: `${formatMoney(tx.amount)} ${incoming ? 'received' : 'paid'}${mode}`,
       body: incoming ? 'Who was this from? Tap to name it.' : 'Who was this to? Tap to name it.',
       categoryIdentifier: NEEDS_NAME_CATEGORY,
       data: { transactionId: tx.id },
@@ -210,7 +210,7 @@ export const checkBudgets = async () => {
     const name = row.category === 'ALL' ? 'Monthly budget' : `${row.category} budget`
     await notifyAlert(
       row.level === 'over' ? `${name} exceeded` : `${name} at ${Math.round(row.ratio * 100)}%`,
-      `${formatINR(row.spent)} spent of ${formatINR(row.amount)}.`
+      `${formatMoney(row.spent)} spent of ${formatMoney(row.amount)}.`
     )
     alerts[key] = row.level
     changed = true

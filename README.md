@@ -1,6 +1,9 @@
 # Outspend
 
-Private, offline expense tracker for Android. It reads bank/UPI SMS on the device, turns them into transactions, and never sends your data anywhere.
+Private, offline expense tracker for Android, built to work in any country. It reads bank/UPI SMS on the device, turns them into transactions, and never sends your data anywhere.
+
+## Countries and currencies
+One home currency per install, chosen on the first screen (guessed from the phone) and changeable in Settings. Ready-made presets: India, US, UK, UAE, Saudi Arabia, Singapore, Australia, New Zealand, Canada, Ireland, South Africa, Nigeria, Kenya, Philippines, Malaysia, Sri Lanka, Nepal, Bangladesh, Pakistan, plus "Other country" with any of 24 supported currencies. Messages in a different currency are kept (with their own symbol) but never added to your totals. India has a tuned bank-SMS profile; every other country uses a general English profile and has **not been tested against real bank messages**. See `src/regions/profiles.js` for how to add or tune a country.
 
 ## Features
 - Automatic transactions from bank/UPI/card SMS (live + history import + daily audit), with OTP/promo filtering, duplicate protection and refund linking
@@ -15,7 +18,7 @@ Private, offline expense tracker for Android. It reads bank/UPI SMS on the devic
 - App lock using the phone's own fingerprint/face/screen lock (no separate app PIN), encrypted backup/restore (AES-256-GCM), home-screen widget
 - Accounts (opening balance + reconciliation), credit cards (cycle spend, 80%/95% limit alerts), subscription detection with renewal reminders
 - Export to CSV, JSON and a PDF group bill via the share sheet
-- 30-day trial then a Google Play subscription (paywall behind a flag, see below)
+- 30-day trial then a Google Play subscription priced per country in Play Console (paywall behind a flag, see below)
 
 Gmail receipt sync is **deferred** (no OAuth client yet); `src/services/GoogleAuth.js` is an unused stub.
 

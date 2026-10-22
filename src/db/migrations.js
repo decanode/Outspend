@@ -3,6 +3,15 @@ import { schemaMigrations, addColumns, createTable } from '@nozbe/watermelondb/S
 export default schemaMigrations({
   migrations: [
     {
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'transactions',
+          columns: [{ name: 'currency', type: 'string', isOptional: true }],
+        }),
+      ],
+    },
+    {
       toVersion: 3,
       steps: [
         addColumns({

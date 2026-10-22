@@ -40,6 +40,7 @@ export const createTransaction = (fields) =>
       tx.notes = fields.notes || null
       tx.tags = fields.tags || null
       tx.transfer = fields.transfer || null
+      tx.currency = fields.currency || null
       tx.created_at = now
       tx.updated_at = now
     })

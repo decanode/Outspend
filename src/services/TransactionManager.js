@@ -71,6 +71,7 @@ export const ingestMessages = async (messages, { onProgress } = {}) => {
       r.merchant_rule_id = d.merchant_rule_id
       r.linked_transaction_id = idByTemp.get(d.linked_transaction_id) || d.linked_transaction_id
       r.transfer = d.transfer
+      r.currency = d.currency
       r.created_at = now
       r.updated_at = now
     }))

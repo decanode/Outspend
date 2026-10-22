@@ -31,12 +31,12 @@ const sameAsSchema = (table, cols) => {
 }
 
 describe('schema migrations', () => {
-  test('schema is at v3', () => expect(schema.version).toBe(3))
+  test('schema is at v4', () => expect(schema.version).toBe(4))
 
   test('v1 -> v2 adds every v2 column and the accounts table', () => {
     const steps = stepsForMigration({ migrations, fromVersion: 1, toVersion: 2 })
     const { added, created } = collect(steps)
-    const v2Tx = Object.keys(schema.tables.transactions.columns).filter(c => !V1.transactions.includes(c) && !['transfer', 'tags', 'my_share'].includes(c))
+    const v2Tx = Object.keys(schema.tables.transactions.columns).filter(c => !V1.transactions.includes(c) && !['transfer', 'tags', 'my_share', 'currency'].includes(c))
     expect((added.transactions || []).map(c => c.name).sort()).toEqual(v2Tx.sort())
     expect(v2Tx.sort()).toEqual([...V2_TRANSACTIONS_EXTRA].sort())
     expect(Object.keys(created)).toEqual(['accounts'])
@@ -55,8 +55,14 @@ describe('schema migrations', () => {
     for (const [table, cols] of Object.entries(created)) sameAsSchema(table, cols)
   })
 
-  test('a fresh v1 install can reach v3 in one go', () => {
-    const steps = stepsForMigration({ migrations, fromVersion: 1, toVersion: 3 })
+  test('v3 -> v4 adds the optional currency column', () => {
+    const { added } = collect(stepsForMigration({ migrations, fromVersion: 3, toVersion: 4 }))
+    expect(added.transactions).toEqual([{ name: 'currency', type: 'string', isOptional: true }])
+    expect(schema.tables.transactions.columns.currency).toMatchObject({ type: 'string', isOptional: true })
+  })
+
+  test('a fresh v1 install can reach v4 in one go', () => {
+    const steps = stepsForMigration({ migrations, fromVersion: 1, toVersion: 4 })
     expect(steps).toBeTruthy()
     const { added, created } = collect(steps)
     const allNewTx = Object.keys(schema.tables.transactions.columns).filter(c => !V1.transactions.includes(c))

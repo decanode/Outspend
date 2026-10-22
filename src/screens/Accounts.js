@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native'
 import withObservables from '@nozbe/with-observables'
 import { Q } from '@nozbe/watermelondb'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
-import { accountBalance, cardSpend, utilisation, utilisationLevel, formatINR } from '../services/Analytics'
+import { accountBalance, cardSpend, utilisation, utilisationLevel, formatMoney } from '../services/Analytics'
 import { detectSubscriptions } from '../services/SubscriptionDetector'
 import { scheduleSubscriptionReminder, cancelSubscriptionReminder, initNotifications } from '../services/NotificationService'
 import { getSettings, updateSettings } from '../services/Settings'
@@ -13,16 +13,16 @@ import { fetchLiveTransactions } from '../data/transactions'
 import { col, toPlain, watch } from '../data/util'
 import { Button, Field, EmptyState, SectionTitle, screenStyles } from '../components/ui'
 import { AccountForm, CardForm, SubscriptionForm } from '../components/AccountForms'
-import { formatDate } from '../utils/format'
+import { formatDate, parseSignedAmount } from '../utils/format'
 
 const LEVEL_COLOR = { ok: COLORS.emerald, warning: COLORS.amber, critical: COLORS.coral }
 
 const AccountCard = ({ account, balance, onEdit }) => {
   const [input, setInput] = useState('')
   const adjust = () => {
-    const value = parseFloat(input.replace(/[₹,\s]/g, ''))
+    const value = parseSignedAmount(input)
     if (!Number.isFinite(value)) return Alert.alert('Enter a number', 'Type the balance shown by your bank.')
-    Alert.alert('Reconcile balance', `Set ${account.name} to ${formatINR(value)}? Future transactions will be counted from now.`, [
+    Alert.alert('Reconcile balance', `Set ${account.name} to ${formatMoney(value)}? Future transactions will be counted from now.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Update', onPress: async () => { await reconcileAccount(account, value); setInput('') } },
     ])
@@ -33,7 +33,7 @@ const AccountCard = ({ account, balance, onEdit }) => {
         <Text style={styles.cardTitle}>{account.name}{account.last4 ? `  ••${account.last4}` : ''}</Text>
         <Text style={styles.link} onPress={onEdit}>Edit</Text>
       </View>
-      <Text style={styles.balance}>App balance: {balance < 0 ? '-' : ''}{formatINR(balance)}</Text>
+      <Text style={styles.balance}>App balance: {balance < 0 ? '-' : ''}{formatMoney(balance)}</Text>
       <View style={styles.inputRow}>
         <Field placeholder="Actual balance" keyboardType="decimal-pad" value={input} onChangeText={setInput} style={{ flex: 1, marginRight: 8 }} />
         <Button title="Adjust" onPress={adjust} />
@@ -52,7 +52,7 @@ const CardTile = ({ card, spend, onEdit }) => {
         <Text style={styles.link} onPress={onEdit}>Edit</Text>
       </View>
       <Text style={[styles.balance, level !== 'ok' && { color: LEVEL_COLOR[level] }]}>
-        {formatINR(spend)} / {formatINR(card.limit)} this cycle{level === 'critical' ? ' · limit almost reached' : ''}
+        {formatMoney(spend)} / {formatMoney(card.limit)} this cycle{level === 'critical' ? ' · limit almost reached' : ''}
       </Text>
       <View style={styles.progressBar}>
         <View style={{ height: '100%', width: `${Math.round(ratio * 100)}%`, backgroundColor: LEVEL_COLOR[level] }} />
@@ -132,7 +132,7 @@ const Accounts = ({ accounts, cards, subscriptions, movements }) => {
     <View style={screenStyles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={screenStyles.header}>Net worth & reconciliation</Text>
-        <Text style={styles.netWorth}>{netWorth < 0 ? '-' : ''}{formatINR(netWorth)}</Text>
+        <Text style={styles.netWorth}>{netWorth < 0 ? '-' : ''}{formatMoney(netWorth)}</Text>
         <Text style={styles.netHint}>Accounts minus credit-card spend this cycle</Text>
 
         <SectionTitle right={<Text style={styles.link} onPress={() => setAccountForm({})}>+ Add</Text>}>Accounts</SectionTitle>
@@ -148,7 +148,7 @@ const Accounts = ({ accounts, cards, subscriptions, movements }) => {
         <SectionTitle right={<Text style={styles.link} onPress={() => setSubForm({})}>+ Add</Text>}>Subscriptions</SectionTitle>
         {suggestions.map(s => (
           <View key={s.key} style={[GLASS_STYLES.card, styles.card]}>
-            <Text style={styles.cardTitle}>{s.merchant} · {formatINR(s.amount)} {s.cycle.toLowerCase()}</Text>
+            <Text style={styles.cardTitle}>{s.merchant} · {formatMoney(s.amount)} {s.cycle.toLowerCase()}</Text>
             <Text style={styles.balance}>Looks like a recurring charge. Track it and get a reminder before it renews?</Text>
             <View style={{ flexDirection: 'row' }}>
               <Button title="Track" onPress={() => trackSuggestion(s)} style={{ marginRight: 8 }} />
@@ -161,7 +161,7 @@ const Accounts = ({ accounts, cards, subscriptions, movements }) => {
           : subscriptions.map(sub => (
             <View key={sub.id} style={[GLASS_STYLES.card, styles.card, !sub.is_active && { opacity: 0.6 }]}>
               <View style={styles.cardHead}>
-                <Text style={styles.cardTitle}>{sub.name} · {formatINR(sub.amount)}</Text>
+                <Text style={styles.cardTitle}>{sub.name} · {formatMoney(sub.amount)}</Text>
                 <Text style={styles.link} onPress={() => setSubForm(sub)}>Edit</Text>
               </View>
               <Text style={styles.balance}>

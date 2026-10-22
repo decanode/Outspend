@@ -1,3 +1,5 @@
+import { dateLocale, formatMoney, homeCurrency } from '../regions'
+
 // Pure formatters for export. No I/O here so they can be unit-tested.
 
 /** RFC 4180 field: quote when it holds a comma, quote or line break. */
@@ -6,12 +8,13 @@ export const csvField = (value) => {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-const EXPORT_COLUMNS = ['Date', 'Merchant', 'Amount', 'Type', 'Category', 'Source', 'Account', 'Notes', 'Has receipt', 'Your share', 'Tags', 'Transfer']
+const EXPORT_COLUMNS = ['Date', 'Merchant', 'Amount', 'Currency', 'Type', 'Category', 'Source', 'Account', 'Notes', 'Has receipt', 'Your share', 'Tags', 'Transfer']
 
 const exportRow = (t, names = {}) => [
   new Date(t.timestamp).toISOString(),
   t.merchant,
   t.amount,
+  t.currency || homeCurrency(),
   t.type,
   t.category || '',
   t.source,
@@ -38,6 +41,7 @@ export const toJson = (txs, names = {}) =>
       date: new Date(t.timestamp).toISOString(),
       merchant: t.merchant,
       amount: t.amount,
+      currency: t.currency || homeCurrency(),
       type: t.type,
       category: t.category || null,
       source: t.source,
@@ -55,7 +59,7 @@ export const escapeHtml = (s) =>
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 
-const inr = (n) => '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: Number.isInteger(n) ? 0 : 2 })
+const inr = (n) => formatMoney(n) // home-currency amounts, formatted for the active region
 
 /** Printable bill for sharing a group expense. Only expenses are included. */
 export const buildBillHtml = (txs, { title = 'Outspend Group Bill Summary', rangeLabel = '' } = {}) => {
@@ -63,7 +67,7 @@ export const buildBillHtml = (txs, { title = 'Outspend Group Bill Summary', rang
   const total = rows.reduce((s, t) => s + t.amount, 0)
   const body = rows.map(t => `
       <tr>
-        <td>${escapeHtml(new Date(t.timestamp).toLocaleDateString('en-IN'))}</td>
+        <td>${escapeHtml(new Date(t.timestamp).toLocaleDateString(dateLocale()))}</td>
         <td>${escapeHtml(t.merchant)}</td>
         <td>${escapeHtml(t.category || '')}</td>
         <td style="text-align:right">${escapeHtml(inr(t.amount))}</td>
@@ -89,7 +93,7 @@ export const buildReportHtml = (a, label) => {
       <td style="text-align:right">${a.total > 0 ? Math.round((c.amount / a.total) * 100) : 0}%</td>
       <td style="text-align:right">${escapeHtml(pctText(c.deltaPct))}</td></tr>`).join('')
   const top = a.top.slice(0, 5).map(t => `
-      <tr><td>${escapeHtml(new Date(t.timestamp).toLocaleDateString('en-IN'))}</td><td>${escapeHtml(t.merchant)}</td>
+      <tr><td>${escapeHtml(new Date(t.timestamp).toLocaleDateString(dateLocale()))}</td><td>${escapeHtml(t.merchant)}</td>
       <td>${escapeHtml(t.category)}</td><td style="text-align:right">${escapeHtml(inr(t.amount))}</td></tr>`).join('')
   const riser = a.movers.up[0]
   return `<html>

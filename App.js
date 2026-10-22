@@ -27,7 +27,7 @@ import { syncInbox } from './src/services/SmsIngest'
 import { hasSmsPermission } from './src/services/Permissions'
 import { isLockActive } from './src/services/AppLock'
 import { shouldLockOnResume } from './src/services/LockLogic'
-import { setNumberStyle } from './src/services/Analytics'
+import { applyRegionSettings, guessRegionId } from './src/regions'
 import { afterChange } from './src/services/PostChange'
 
 const Tab = createBottomTabNavigator()
@@ -69,7 +69,7 @@ export default function App() {
     let cancelled = false
     ;(async () => {
       const settings = await loadSettings()
-      setNumberStyle(settings.numberStyle)
+      applyRegionSettings({ region: settings.region || guessRegionId(Intl.DateTimeFormat().resolvedOptions().locale), currency: settings.currency, numberStyle: settings.numberStyle })
       if (settings.isOnboarded) await ensureTrialStarted()
       const nextAccess = await getAccessState()
       const mustLock = settings.isOnboarded && (await isLockActive())

@@ -6,8 +6,9 @@ import { getSettings, updateSettings } from './Settings'
 import { computeAccess } from './Access'
 import { FEATURES } from '../config'
 
-export const SUBSCRIPTION_SKU = 'com.decanode.outspend.premium_monthly' // ₹299/month
-export const FALLBACK_PRICE = '₹299 / month'
+// Price is set per country in Play Console; the app only ever shows the store's localised price.
+export const SUBSCRIPTION_SKU = 'com.decanode.outspend.premium_monthly'
+export const FALLBACK_PRICE = null
 
 let connected = false
 const connect = async () => {

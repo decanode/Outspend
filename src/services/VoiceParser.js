@@ -1,5 +1,14 @@
-const AMOUNT = /(?:₹|rs\.?|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(?:rupees?|rs\.?|inr|bucks)?/i
+import { getRegion, currencyInfo, numberPattern, parseNumber, CURRENCIES } from '../regions'
+
 const CREDIT_WORDS = /\b(?:received|got|earned|salary|credited|refund(?:ed)?|income)\b/i
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Currency words/symbols for the amount: the home currency's, plus every ISO code and symbol. */
+const currencyWords = (region) => {
+  const home = currencyInfo(region.currency)
+  const symbols = Object.values(CURRENCIES).flatMap(c => [c.symbol, ...c.tokens].filter(t => !/^[A-Za-z]{1,2}$/.test(t) || home.tokens.includes(t)))
+  return [...new Set([...home.words, ...home.tokens, ...symbols])].sort((a, b) => b.length - a.length).map(escapeRe).join('|')
+}
 
 const clean = (s) => {
   const t = s.replace(/\s+/g, ' ').replace(/[.,]+$/, '').trim()
@@ -7,14 +16,16 @@ const clean = (s) => {
 }
 
 /**
- * Parse a spoken expense such as "spent 250 on coffee at Starbucks" or
- * "paid 1,200 rupees to Ramesh". Returns { amount, merchant, type, note };
- * amount is null when no number could be heard.
+ * Parse a spoken expense such as "spent 250 on coffee at Starbucks" or "paid 1,200 to Ramesh".
+ * Returns { amount, merchant, type, note }; amount is null when no number could be heard.
+ * Currency words come from the active region ("rupees", "dollars", "pounds" ...).
  */
-export const parseVoiceExpense = (utterance) => {
+export const parseVoiceExpense = (utterance, region = getRegion()) => {
   const text = (utterance || '').trim()
-  const m = text.match(AMOUNT)
-  const amount = m ? parseFloat(m[1].replace(/,/g, '')) : null
+  const words = currencyWords(region)
+  const re = new RegExp(`(?:(?:${words})\\s?)?(${numberPattern(region.decimal)})(?:\\s?(?:${words})\\b)?`, 'i')
+  const m = text.match(re)
+  const amount = m ? parseNumber(m[1], region.decimal) : null
   const type = CREDIT_WORDS.test(text) ? 'CREDIT' : 'DEBIT'
 
   const rest = m ? (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)) : text

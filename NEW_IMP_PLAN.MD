@@ -596,3 +596,43 @@ Verified here: **197 tests pass**, lint is clean, the Android JS bundle builds. 
 4. Test backup: create, share/save the `.outspend` file, wipe data, restore from onboarding; confirm accounts, budgets, goals, splits and links return.
 5. Seed a few transactions and walk through Analytics (week and month), Plan (budget alert at 80%), splits, tags, transfers (pay a card bill from savings: it should not count as spending).
 6. Check the Analytics charts and the 6-tab bar on a small phone; adjust labels if cramped.
+
+
+---
+
+## 13. Round 3: not tied to one currency or country (implemented, awaiting device test)
+
+Request: *"Do not be generic to one currency. I may extend this logic to different countries as well."*
+
+### How it is built
+- **`src/regions/`** holds everything country-specific, so adding a country is data, not logic:
+  - `currencies.js`: 24 currencies with symbol, decimals, how they appear in messages, spoken names (for voice), and a `scale` that sizes thresholds (a "small purchase" is ₹200 / $10 / £8 / AED 40; unusual-spend and salary floors scale the same way).
+  - `profiles.js`: 20 country presets (India, US, UK, UAE, Saudi Arabia, Singapore, Australia, New Zealand, Canada, Ireland, South Africa, Nigeria, Kenya, Philippines, Malaysia, Sri Lanka, Nepal, Bangladesh, Pakistan, "Other") and two SMS profiles: **IN** (tuned) and **GLOBAL** (general English). Each preset sets currency, locale (dates), speech language, digit grouping, decimal mark and which SMS profile to use.
+  - `index.js`: the active region, `formatMoney`, `scaled`, number parsing, `applyRegionSettings`.
+- **Parser** (`RegexEngine.js`) builds its regexes from the active profile: sender rules (India's DLT ids vs. "alphanumeric id or 3-6 digit short code, never a personal phone number" elsewhere), any currency symbol or ISO code before or after the number, comma-decimal style supported, payment modes and UPI-style addresses only where the country has them. Letter abbreviations like `R`, `Rs`, `RM` are trusted only for the home currency.
+- **Per-transaction currency (schema v4):** a message in another currency (e.g. a USD charge on an Indian card) is stored with its ISO code, shown with its own symbol, and **excluded from home-currency totals, balances, budgets and card spend**. Analytics tells you how many were left out. Backups, CSV and JSON carry the currency.
+- **Everything visible follows the region:** money, dates, input fields' labels and parsing (`$1,250.50`, `1.250,50`), voice entry ("25 dollars", "12 pounds", "40 dirhams"), merchant keyword categories (shared list + the country's own), alerts, widget, PDF/CSV exports. The paywall shows only the store's localised price.
+- **First-run and Settings:** a country step on the first screen (guessed from the phone's locale), and "Country & currency" plus "Number format" (follow country / 12,34,567 / 1,234,567) in Settings. Changing country after you have data warns that amounts are relabelled, not converted.
+- **App icon is currency-neutral:** the earlier rupee-coin was replaced by a donut chart with one slice pulled out.
+- India stays the default for existing installs, and every India test still passes unchanged.
+
+### What is verified and what is not
+- **Verified:** 257 tests including 11 sample messages for 7 countries, comma-decimal numbers, foreign-currency handling end to end through the real database layer, backup round trip with currencies, per-currency thresholds, formatting for 8 currencies. Lint is clean.
+- **Not verified:** the non-India SMS formats are **plausible generic examples I wrote, not real bank messages**. Real formats vary a lot by bank. Treat the GLOBAL profile as a starting point: collect anonymised real messages per country, add them to the tests, and tune. India is the only country tuned on realistic samples.
+- Non-English message text (German, French, Arabic ...) is not understood; the keywords are English. A country with local-language bank SMS needs its own profile keywords.
+- One home currency per install. Multi-currency accounts/budgets (e.g. living between two countries) are not built.
+
+### Decisions for you
+| # | Decision | Default | Alternative |
+|---|---|---|---|
+| D18 | Languages | English keywords only | Add per-country keyword lists (e.g. German, Arabic, Hindi) in the SMS profile; needs real sample messages for each |
+| D19 | Multi-currency | One home currency; other currencies are stored but not summed | Convert using exchange rates (needs a rate source, which conflicts with "no network calls", or manual rates the user enters) |
+| D20 | Which countries to tune first | Only India is tuned | Tell me which countries matter and send redacted real sample SMS for each; I will add profiles and tests |
+| D21 | Region change after data exists | Allowed with a warning; amounts are relabelled, not converted | Block it, or offer to start fresh |
+| D22 | Play pricing | Set per country in Play Console | Nothing to do in the app; configure prices there |
+
+### Extra manual steps
+1. Rebuild the app (`npx expo run:android` or EAS), since the database schema changed (v4) and the launcher icon changed.
+2. Try the first-run country step on a phone set to another region (or pick another country) and check currency symbols, dates, number grouping, and the voice prompt language.
+3. Send a few real bank messages from your own non-India bank to a test device, and report any that are missed or misread (redact numbers) so the profile can be improved.
+4. In Play Console, set the subscription price for each country you launch in.
