@@ -1,3 +1,4 @@
 <resources>
   <string name="app_name">Outspend</string>
+  <string name="widget_description">Today\'s spend and what is left of your monthly budget</string>
 </resources>

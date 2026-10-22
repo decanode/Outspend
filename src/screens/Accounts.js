@@ -10,7 +10,7 @@ import { getSettings, updateSettings } from '../services/Settings'
 import { createAccount, updateAccount, reconcileAccount, deleteAccount, createCard, updateCard, deleteCard } from '../data/accounts'
 import { createSubscription, updateSubscription, deleteSubscription, fetchSubscriptions } from '../data/subscriptions'
 import { fetchLiveTransactions } from '../data/transactions'
-import { col, toPlain } from '../data/util'
+import { col, toPlain, watch } from '../data/util'
 import { Button, Field, EmptyState, SectionTitle, screenStyles } from '../components/ui'
 import { AccountForm, CardForm, SubscriptionForm } from '../components/AccountForms'
 import { formatDate } from '../utils/format'
@@ -209,11 +209,11 @@ const styles = StyleSheet.create({
 })
 
 export default withObservables([], () => ({
-  accounts: col('accounts').query(),
-  cards: col('credit_cards').query(),
-  subscriptions: col('subscriptions').query(),
-  movements: col('transactions').query(
+  accounts: watch(col('accounts').query()),
+  cards: watch(col('credit_cards').query()),
+  subscriptions: watch(col('subscriptions').query()),
+  movements: watch(col('transactions').query(
     Q.where('is_deleted', false),
     Q.or(Q.where('account_id', Q.notEq(null)), Q.where('card_id', Q.notEq(null)))
-  ),
+  )),
 }))(Accounts)

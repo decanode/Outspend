@@ -5,6 +5,7 @@ import { CATEGORIES } from '../constants/categories'
 import { COLORS } from '../theme/designSystem'
 import { col } from '../data/util'
 import { parseAmount, parseDateInput, toDateInput } from '../utils/format'
+import { tagsToString } from '../services/Planning'
 
 /**
  * Add / edit / confirm a transaction. `initial` can pre-fill it (edit, or a voice
@@ -22,6 +23,7 @@ function TransactionFormBody({ visible, onClose, onSave, initial = {}, title = '
   const [category, setCategory] = useState(initial.category || null)
   const [date, setDate] = useState(() => toDateInput(initial.timestamp || Date.now()))
   const [notes, setNotes] = useState(initial.notes || '')
+  const [tags, setTags] = useState(initial.tags || '')
   const [accountId, setAccountId] = useState(initial.account_id || null)
   const [cardId, setCardId] = useState(initial.card_id || null)
   const [accounts, setAccounts] = useState([])
@@ -48,6 +50,7 @@ function TransactionFormBody({ visible, onClose, onSave, initial = {}, title = '
       category,
       timestamp: ts,
       notes: notes.trim() || null,
+      tags: tagsToString(tags) || null,
       account_id: accountId,
       card_id: type === 'DEBIT' ? cardId : null,
     })
@@ -91,6 +94,7 @@ function TransactionFormBody({ visible, onClose, onSave, initial = {}, title = '
           </View>
         </>
       ) : null}
+      <Field label="Tags (optional, comma separated)" value={tags} onChangeText={setTags} placeholder="trip, work" autoCapitalize="none" style={{ marginBottom: 12 }} />
       <Field label="Notes (optional)" value={notes} onChangeText={setNotes} style={{ marginBottom: 12 }} />
       {error ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{error}</Text> : null}
       <Button title="Save" onPress={submit} />

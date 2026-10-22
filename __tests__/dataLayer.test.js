@@ -273,3 +273,32 @@ describe('round 2 data layer', () => {
     expect(() => validateBackup({ format: 'outspend-backup', version: 2, tables: {} })).toThrow(/newer/)
   })
 })
+
+import { watch } from '../src/data/util'
+import { observeLiveTransactions } from '../src/data/transactions'
+
+describe('observation', () => {
+  const next = (obs, predicate) =>
+    new Promise((resolve) => {
+      const sub = obs.subscribe((rows) => { if (predicate(rows)) { sub.unsubscribe(); resolve(rows) } })
+    })
+
+  test('lists re-emit when a field changes (plain observe() would not)', async () => {
+    const tx = await createTransaction({ amount: 10, merchant: 'Old', type: 'DEBIT' })
+    const seen = []
+    const sub = observeLiveTransactions().subscribe(rows => seen.push(rows.map(r => r.merchant)))
+    await new Promise(r => setTimeout(r, 20))
+    await database.write(() => tx.update(t => { t.merchant = 'New' }))
+    await new Promise(r => setTimeout(r, 20))
+    sub.unsubscribe()
+    expect(seen[0]).toEqual(['Old'])
+    expect(seen[seen.length - 1]).toEqual(['New'])
+  })
+
+  test('watch works for any table', async () => {
+    const acc = await createAccount({ name: 'A', type: 'CASH', balance: 1 })
+    const p = next(watch(database.collections.get('accounts').query()), rows => rows[0] && rows[0].balance === 99)
+    await reconcileAccount(acc, 99)
+    expect((await p)[0].balance).toBe(99)
+  })
+})

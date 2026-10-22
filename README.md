@@ -8,7 +8,11 @@ Private, offline expense tracker for Android. It reads bank/UPI SMS on the devic
 - Manual and voice entry (voice is confirmed before saving); a manual entry is upgraded to "verified" when its SMS arrives
 - Merchant rules and categories; unknown payees surface under "Needs attention"
 - Ledger with search, filters, per-day totals, swipe actions, soft delete with undo, edit, receipt photos
-- Analytics by month and category with top merchants and month-over-month change
+- Analytics for any week or month: change vs the previous period, biggest movers, day-by-day bars, weekday/weekend and time-of-day patterns, small-purchase share, top 10 expenses, cash flow and savings rate, run-rate projection, 6/12-month trends, and a shareable PDF report card
+- Plan tab: category and overall monthly budgets with daily allowance and 80%/100% alerts, savings goals, upcoming-bills calendar, payday countdown, and money owed to you from split payments
+- Transfers between your own accounts and card-bill payments are detected and kept out of spending and income; splits count only your share; tags group spending (e.g. a trip)
+- Alerts for unusual spend and duplicate charges
+- App lock (PIN + optional fingerprint), encrypted backup/restore (AES-256-GCM), home-screen widget
 - Accounts (opening balance + reconciliation), credit cards (cycle spend, 80%/95% limit alerts), subscription detection with renewal reminders
 - Export to CSV, JSON and a PDF group bill via the share sheet
 - 30-day trial then a Google Play subscription (paywall behind a flag, see below)
@@ -34,4 +38,5 @@ npx expo run:android        # development build (native modules: SMS, camera, sp
 ## Known limits
 - Capture while the app is closed depends on Android allowing the background start. If the OS refuses (aggressive battery savers on some phones), the SMS is picked up by the delta sync on next launch and the daily task. Reading UPI app notifications (GPay/PhonePe) is intentionally not supported; bank SMS cover those payments.
 - The trial start is stored locally, so reinstalling resets it (accepted for a privacy-first design).
+- The theme is dark only; a light theme needs a styling refactor and is not done.
 - `allowBackup` is disabled so the transaction database is not copied to cloud backup. Moving to a new phone requires an export.

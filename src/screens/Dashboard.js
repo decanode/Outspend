@@ -8,9 +8,14 @@ import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { VoiceService } from '../services/VoiceService'
 import { parseVoiceExpense } from '../services/VoiceParser'
 import { aggregateSpend, accountBalance, dailySpend, monthBounds, formatINR } from '../services/Analytics'
+import { budgetStatus } from '../services/Budgets'
+import { detectSalary } from '../services/Planning'
+import { observeBudgets } from '../data/budgets'
+import { afterChange } from '../services/PostChange'
+import { HBar } from '../components/charts'
 import { observeNeedsReview, observeRecentTransactions, createTransaction, updateTransaction } from '../data/transactions'
 import { nameUnknownTransaction } from '../data/naming'
-import { toPlain, col } from '../data/util'
+import { toPlain, col, watch } from '../data/util'
 import { Field, Button, Chip, EmptyState, SectionTitle, screenStyles } from '../components/ui'
 import CategoryPicker from '../components/CategoryPicker'
 import TransactionForm from '../components/TransactionForm'
@@ -27,6 +32,7 @@ const NeedsAttentionCard = ({ transaction: tx }) => {
     if (!name.trim()) return Alert.alert('Enter a name', 'Who was this payment to?')
     const updated = await nameUnknownTransaction(tx, name, category)
     if (updated > 1) Alert.alert('Rule saved', `${updated} matching transactions updated.`)
+    afterChange().catch(() => {})
   }
 
   const mode = tx.payment_mode ? ` via ${tx.payment_mode}` : ''
@@ -47,7 +53,7 @@ const NeedsAttentionCard = ({ transaction: tx }) => {
   )
 }
 
-const Dashboard = ({ accounts, balanceTxs, windowTxs, needsReview, recent }) => {
+const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsReview, recent }) => {
   const [listening, setListening] = useState(false)
   const [voiceDraft, setVoiceDraft] = useState(null)
   const [adding, setAdding] = useState(false)
@@ -80,21 +86,25 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, needsReview, recent }) => 
     await createTransaction({ ...values, source, raw_text: voiceDraft && voiceDraft.raw_text })
     setVoiceDraft(null)
     setAdding(false)
+    afterChange().catch(() => {})
   }
 
-  const { balance, hasAccounts, monthSpend, week } = useMemo(() => {
+  const { balance, hasAccounts, monthSpend, week, budget, salary } = useMemo(() => {
     const now = new Date()
     const { start, end } = monthBounds(now.getFullYear(), now.getMonth())
     const accs = accounts.map(toPlain)
     const bTx = balanceTxs.map(toPlain)
     const wTx = windowTxs.map(toPlain)
+    const month = aggregateSpend(wTx, start, end)
     return {
       hasAccounts: accs.length > 0,
       balance: accs.reduce((sum, a) => sum + accountBalance(a, bTx), 0),
-      monthSpend: aggregateSpend(wTx, start, end).total,
+      monthSpend: month.total,
       week: dailySpend(wTx),
+      budget: budgetStatus(budgets.map(toPlain), month, end).overall,
+      salary: detectSalary(salaryTxs.map(toPlain)),
     }
-  }, [accounts, balanceTxs, windowTxs])
+  }, [accounts, balanceTxs, windowTxs, salaryTxs, budgets])
 
   const chartData = week.map(d => ({ value: d.amount, label: d.label, frontColor: COLORS.emerald }))
 
@@ -109,7 +119,21 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, needsReview, recent }) => 
             <Text style={styles.noAccounts}>Add an account in the Accounts tab to see your balance.</Text>
           )}
           <Text style={styles.monthSpend}>Spent this month: {formatINR(monthSpend)}</Text>
+          {salary && salary.daysUntil <= 10 ? (
+            <Text style={styles.monthSpend}>{salary.daysUntil === 0 ? 'Payday is today' : salary.daysUntil === 1 ? 'Payday is tomorrow' : `Payday in ${salary.daysUntil} days`}</Text>
+          ) : null}
         </View>
+
+        {budget ? (
+          <View style={[GLASS_STYLES.card, styles.section]}>
+            <HBar
+              label={budget.level === 'over' ? 'Over your monthly budget' : `You can spend about ${formatINR(Math.round(budget.dailyAllowance))} a day`}
+              value={`${formatINR(budget.spent)} / ${formatINR(budget.amount)}`}
+              ratio={budget.ratio}
+              color={budget.level === 'over' ? COLORS.coral : budget.level === 'warning' ? COLORS.amber : COLORS.emerald}
+            />
+          </View>
+        ) : null}
 
         {needsReview.length > 0 && (
           <View style={styles.section}>
@@ -201,9 +225,11 @@ const enhance = withObservables([], () => {
   const windowStart = Math.min(monthStart, Date.now() - 8 * 86400000)
   const live = Q.where('is_deleted', false)
   return {
-    accounts: col('accounts').query(),
-    balanceTxs: col('transactions').query(live, Q.where('account_id', Q.notEq(null))),
-    windowTxs: col('transactions').query(live, Q.where('timestamp', Q.gte(windowStart))),
+    accounts: watch(col('accounts').query()),
+    balanceTxs: watch(col('transactions').query(live, Q.where('account_id', Q.notEq(null)))),
+    windowTxs: watch(col('transactions').query(live, Q.where('timestamp', Q.gte(windowStart)))),
+    salaryTxs: watch(col('transactions').query(live, Q.where('type', 'CREDIT'), Q.where('timestamp', Q.gte(Date.now() - 100 * 86400000)))),
+    budgets: observeBudgets(),
     needsReview: observeNeedsReview(),
     recent: observeRecentTransactions(5),
   }

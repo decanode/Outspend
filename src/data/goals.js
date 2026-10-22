@@ -1,7 +1,7 @@
-import { col } from './util'
+import { col, watch } from './util'
 import { database } from '../db'
 
-export const observeGoals = () => col('goals').query()
+export const observeGoals = () => watch(col('goals').query())
 
 export const createGoal = ({ name, target_amount, target_date, saved_amount = 0 }) =>
   database.write(() =>

@@ -1,7 +1,7 @@
-import { col } from './util'
+import { col, watch } from './util'
 import { database } from '../db'
 
-export const observeSubscriptions = () => col('subscriptions').query()
+export const observeSubscriptions = () => watch(col('subscriptions').query())
 export const fetchSubscriptions = () => col('subscriptions').query().fetch()
 
 export const createSubscription = ({ name, merchant, amount, billing_cycle, next_billing_date, detected_from_tx_id }) =>

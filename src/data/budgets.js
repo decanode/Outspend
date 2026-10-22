@@ -1,7 +1,7 @@
-import { col } from './util'
+import { col, watch } from './util'
 import { database } from '../db'
 
-export const observeBudgets = () => col('budgets').query()
+export const observeBudgets = () => watch(col('budgets').query())
 export const fetchBudgets = () => col('budgets').query().fetch()
 
 /** One budget per category: setting it again changes the amount. */

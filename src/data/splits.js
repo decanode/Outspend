@@ -1,10 +1,10 @@
 import { Q } from '@nozbe/watermelondb'
-import { col } from './util'
+import { col, watch } from './util'
 import { database } from '../db'
 import { myShareAfterSplit } from '../services/Planning'
 
-export const observeSplits = () => col('splits').query()
-export const observeSplitsFor = (transactionId) => col('splits').query(Q.where('transaction_id', transactionId))
+export const observeSplits = () => watch(col('splits').query())
+export const observeSplitsFor = (transactionId) => watch(col('splits').query(Q.where('transaction_id', transactionId)))
 export const fetchSplitsFor = (transactionId) => col('splits').query(Q.where('transaction_id', transactionId)).fetch()
 
 /**

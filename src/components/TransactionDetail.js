@@ -6,9 +6,12 @@ import TransactionForm from './TransactionForm'
 import CategoryPicker from './CategoryPicker'
 import CameraVault from '../screens/CameraVault'
 import { COLORS } from '../theme/designSystem'
-import { formatINR } from '../services/Analytics'
+import { formatINR, isTransfer } from '../services/Analytics'
 import { formatDateTime, SOURCE_LABELS } from '../utils/format'
 import { updateTransaction, attachReceipt } from '../data/transactions'
+import { setTransferFlag } from '../data/transfers'
+import { afterChange } from '../services/PostChange'
+import SplitSheet from './SplitSheet'
 import { createRule } from '../data/rules'
 import { suggestPattern } from '../services/RuleEngine'
 
@@ -24,12 +27,14 @@ function TransactionDetail({ transaction: tx, onClose, onDelete }) {
   const [picking, setPicking] = useState(false)
   const [camera, setCamera] = useState(false)
   const [fullImage, setFullImage] = useState(false)
+  const [splitting, setSplitting] = useState(false)
 
   const income = tx.type === 'CREDIT' || tx.type === 'REFUND'
 
   const saveEdit = async (values) => {
     await updateTransaction(tx, { ...values, needs_review: false })
     setEditing(false)
+    afterChange().catch(() => {})
   }
 
   const chooseCategory = async (category, applyAll) => {
@@ -54,6 +59,9 @@ function TransactionDetail({ transaction: tx, onClose, onDelete }) {
       <Row label="Source" value={SOURCE_LABELS[tx.source] || tx.source} />
       <Row label="Payment mode" value={tx.payment_mode} />
       <Row label="Account / card" value={tx.last4 ? `••${tx.last4}` : null} />
+      <Row label="Tags" value={tx.tags ? tx.tags.split(',').map(t => `#${t}`).join(' ') : null} />
+      <Row label="Your share" value={tx.my_share !== null && tx.my_share !== undefined ? formatINR(tx.my_share) : null} />
+      <Row label="Transfer" value={isTransfer(tx) ? (tx.transfer === 'USER' ? 'Yes (you marked it)' : 'Yes (detected), not counted as spending') : null} />
       <Row label="Notes" value={tx.notes} />
       {tx.raw_text ? (
         <View style={styles.raw}>
@@ -73,11 +81,18 @@ function TransactionDetail({ transaction: tx, onClose, onDelete }) {
       <View style={{ marginTop: 16 }}>
         <Button title="Edit" onPress={() => setEditing(true)} />
         <Button title="Change category" onPress={() => setPicking(true)} style={{ marginTop: 8 }} />
+        {tx.type === 'DEBIT' ? <Button title={tx.my_share !== null && tx.my_share !== undefined ? 'Edit split' : 'Split with others'} onPress={() => setSplitting(true)} style={{ marginTop: 8 }} /> : null}
+        <Button
+          title={isTransfer(tx) ? 'Not a transfer: count it' : 'Mark as transfer (not spending)'}
+          onPress={async () => { await setTransferFlag(tx, !isTransfer(tx)); afterChange().catch(() => {}) }}
+          style={{ marginTop: 8 }}
+        />
         <Button title={tx.receipt_path ? 'Replace receipt' : 'Attach receipt'} onPress={() => setCamera(true)} style={{ marginTop: 8 }} />
         <Button title="Delete" variant="danger" onPress={() => { onDelete(tx); onClose() }} style={{ marginTop: 8 }} />
       </View>
 
       <TransactionForm visible={editing} onClose={() => setEditing(false)} onSave={saveEdit} initial={tx} title="Edit transaction" />
+      {splitting ? <SplitSheet transaction={tx} onClose={() => setSplitting(false)} onChanged={() => afterChange().catch(() => {})} /> : null}
       <CategoryPicker visible={picking} onClose={() => setPicking(false)} onSelect={chooseCategory} current={tx.category} merchant={tx.merchant} />
       <Modal visible={camera} animationType="slide" onRequestClose={() => setCamera(false)}>
         <CameraVault onClose={() => setCamera(false)} onImageCaptured={(path) => attachReceipt(tx, path)} />

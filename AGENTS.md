@@ -31,6 +31,9 @@ Outspend is an **Android-only**, plain-JavaScript, offline-first expense tracker
 - **Data:** WatermelonDB (SQLite). Schema/migrations in `src/db/`. Screens never write to the DB directly; use the helpers in `src/data/`.
 - **Pure logic** (parser, rules, analytics, subscription detection, export formatting, access/trial) lives in `src/services/` with no native or DB imports, and is unit-tested in `__tests__/`. Keep it that way.
 - **SMS pipeline:** live: `SmsReceiver.kt` (manifest receiver, fires even when the app is closed) -> `SmsHeadlessTaskService.kt` -> JS task `SmsReceivedTask` (`index.js`) -> `SmsIngest.handleIncomingSms`. Catch-up/history: `SmsModule.getInboxSince` -> `src/native/Sms.js` -> `SmsIngest.js`. Both end in `TransactionManager.js` (commit) <- `IngestPlanner.js` (pure plan). Every SMS gets a stable `external_id`, so imports are idempotent. Unknown payees trigger a notification with a reply box (`NotificationService.js`).
+- **Insights/planning logic** is pure and tested: `Insights.js` (periods, analysis, trends), `Budgets.js`, `Anomaly.js`, `Planning.js` (salary, upcoming bills, splits, tags), `TransferDetector.js`. Spend always goes through `Analytics.spendEntries` so transfers are excluded and split shares are honoured; never sum `amount` directly for analytics.
+- **Lists must use `watch()`** (`src/data/util.js`) or an `observe*` helper, not a bare `query`, otherwise they do not refresh after an edit.
+- **After anything that changes transactions** call `afterChange()` (`PostChange.js`): it pairs transfers, checks budgets and refreshes the widget.
 - **Privacy is a product constraint:** no analytics, no remote logging, no network calls with user data. SMS and receipts stay on the device.
 - **Settings/flags:** persisted app state in `src/services/Settings.js`; release switches in `src/config.js` (`enforcePaywall`).
 

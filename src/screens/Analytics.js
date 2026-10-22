@@ -1,123 +1,259 @@
 import React, { useMemo, useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native'
 import withObservables from '@nozbe/with-observables'
 import { Q } from '@nozbe/watermelondb'
-import { PieChart } from 'react-native-gifted-charts'
+import { PieChart, BarChart } from 'react-native-gifted-charts'
 import { Ionicons } from '@expo/vector-icons'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { categoryColor } from '../constants/categories'
-import { aggregateSpend, monthBounds, monthLabel, shiftMonth, formatINR } from '../services/Analytics'
-import { col, toPlain } from '../data/util'
-import { EmptyState, SectionTitle, screenStyles } from '../components/ui'
+import { formatINR } from '../services/Analytics'
+import { makePeriod, shiftPeriod, periodLabel, isCurrentPeriod, analyzePeriod, runRate, monthlyTrend, categoryTrend } from '../services/Insights'
+import { OVERALL } from '../services/Budgets'
+import { exportPeriodReport } from '../services/ExportService'
+import { col, toPlain, watch } from '../data/util'
+import { observeBudgets } from '../data/budgets'
+import { Button, Chip, EmptyState, screenStyles } from '../components/ui'
+import { HBar, MiniBars, Pill } from '../components/charts'
+import TransactionDetail from '../components/TransactionDetail'
+import useDeleteWithUndo from '../components/useDeleteWithUndo'
+import { formatDate } from '../utils/format'
 
-const TOP_MERCHANTS = 5
+const HISTORY_MONTHS = 15
 
-const MonthView = ({ year, month, txs }) => {
-  const { current, previous } = useMemo(() => {
-    const plain = txs.map(toPlain)
-    const cur = monthBounds(year, month)
-    const prevMonth = shiftMonth({ year, month }, -1)
-    const prev = monthBounds(prevMonth.year, prevMonth.month)
-    return { current: aggregateSpend(plain, cur.start, cur.end), previous: aggregateSpend(plain, prev.start, prev.end) }
-  }, [txs, year, month])
+const Delta = ({ pct, invert = true }) => {
+  if (pct === null || pct === undefined) return null
+  // for spending, up is bad (coral) and down is good (emerald)
+  const bad = invert ? pct > 0 : pct < 0
+  return <Pill text={`${pct > 0 ? '▲' : pct < 0 ? '▼' : '•'} ${Math.abs(pct)}%`} color={pct === 0 ? COLORS.textSecondary : bad ? COLORS.coral : COLORS.emerald} />
+}
 
-  if (current.total === 0) {
-    return <EmptyState title="No spending this month" hint="Expenses captured from SMS or added manually will show up here." />
+const Card = ({ title, children, style }) => (
+  <View style={[GLASS_STYLES.card, styles.card, style]}>
+    {title ? <Text style={styles.cardTitle}>{title}</Text> : null}
+    {children}
+  </View>
+)
+
+const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => {
+  const [now] = useState(() => Date.now())
+  const plain = useMemo(() => txs.map(toPlain), [txs])
+  const a = useMemo(() => analyzePeriod(plain, period), [plain, period])
+  const trend = useMemo(() => monthlyTrend(plain, now, trendMonths), [plain, now, trendMonths])
+  const catTrend = useMemo(() => categoryTrend(plain, now, trendMonths, 5), [plain, now, trendMonths])
+  const cap = budgets.find(b => b.category === OVERALL)
+  const rate = runRate(a.total, period)
+  const label = period.mode === 'WEEK' ? 'last week' : 'last month'
+
+  const share = async () => {
+    try { await exportPeriodReport(period) } catch { Alert.alert('Could not create the report', 'Please try again.') }
   }
 
-  const pieData = current.categories.map(c => ({ value: c.amount, color: categoryColor(c.name) }))
-  const delta = previous.total > 0 ? Math.round(((current.total - previous.total) / previous.total) * 100) : null
+  if (a.total === 0 && a.income === 0) {
+    return <EmptyState title={`Nothing recorded for ${periodLabel(period)}`} hint="Expenses captured from SMS or added by hand will show up here." />
+  }
+
+  const maxTod = Math.max(...Object.values(a.patterns.timeOfDay), 1)
+  const todLabels = { morning: 'Morning (5–12)', afternoon: 'Afternoon (12–5)', evening: 'Evening (5–9)', night: 'Night (9–5)' }
 
   return (
     <>
-      <View style={[GLASS_STYLES.card, styles.chartCard]}>
-        <Text style={styles.cardTitle}>Spending breakdown</Text>
-        <View style={styles.chartContainer}>
-          <PieChart
-            donut
-            innerRadius={60}
-            radius={90}
-            data={pieData}
-            innerCircleColor={COLORS.background}
-            centerLabelComponent={() => (
-              <Text style={{ fontSize: 18, color: COLORS.textPrimary, fontWeight: 'bold' }}>{formatINR(current.total)}</Text>
-            )}
-          />
+      <Card>
+        <Text style={styles.big}>{formatINR(a.total)}</Text>
+        <View style={styles.row}>
+          <Delta pct={a.deltaPct} />
+          <Text style={styles.sub}>  vs {label} ({formatINR(a.prevTotal)})</Text>
         </View>
-        {delta !== null && (
-          <Text style={[styles.delta, { color: delta > 0 ? COLORS.coral : COLORS.emerald }]}>
-            {delta > 0 ? '▲' : '▼'} {Math.abs(delta)}% vs last month
+        <View style={styles.stats}>
+          <View style={styles.stat}><Text style={styles.statLabel}>Income</Text><Text style={[styles.statValue, { color: COLORS.emerald }]}>{formatINR(a.income)}</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>Saved</Text><Text style={styles.statValue}>{a.income > 0 ? `${a.savingsRate}%` : '—'}</Text></View>
+          <View style={styles.stat}><Text style={styles.statLabel}>Per day</Text><Text style={styles.statValue}>{formatINR(Math.round(a.avgPerDay))}</Text></View>
+        </View>
+        {rate ? (
+          <Text style={[styles.sub, { marginTop: 10 }]}>
+            At this pace you will spend {formatINR(Math.round(rate.projected))} this month
+            {cap ? (rate.projected > cap.amount ? `, ${formatINR(Math.round(rate.projected - cap.amount))} over your ${formatINR(cap.amount)} budget.` : `, within your ${formatINR(cap.amount)} budget.`) : '.'}
           </Text>
-        )}
-        <View style={styles.legend}>
-          {current.categories.map(c => (
-            <View key={c.name} style={styles.legendRow}>
-              <View style={[styles.dot, { backgroundColor: categoryColor(c.name) }]} />
-              <Text style={styles.legendName}>{c.name}</Text>
-              <Text style={styles.legendValue}>{Math.round((c.amount / current.total) * 100)}% · {formatINR(c.amount)}</Text>
+        ) : null}
+        {a.busiest ? <Text style={styles.sub}>Busiest day: {formatDate(a.busiest.start)} ({formatINR(a.busiest.amount)})</Text> : null}
+      </Card>
+
+      <Card title="Cash flow">
+        <HBar label="Income" value={formatINR(a.income)} ratio={Math.max(a.income, a.total) > 0 ? a.income / Math.max(a.income, a.total) : 0} />
+        <HBar label="Spent" value={formatINR(a.total)} ratio={Math.max(a.income, a.total) > 0 ? a.total / Math.max(a.income, a.total) : 0} color={COLORS.coral} />
+        <Text style={[styles.sub, { color: a.net >= 0 ? COLORS.emerald : COLORS.coral }]}>
+          {a.net >= 0 ? `You kept ${formatINR(a.net)}` : `You spent ${formatINR(-a.net)} more than you earned`}
+        </Text>
+      </Card>
+
+      {a.categories.length > 0 && (
+        <Card title="Where it went">
+          <View style={styles.center}>
+            <PieChart
+              donut innerRadius={55} radius={85}
+              data={a.categories.map(c => ({ value: c.amount, color: categoryColor(c.name) }))}
+              innerCircleColor={COLORS.background}
+              centerLabelComponent={() => <Text style={{ color: COLORS.textPrimary, fontWeight: 'bold' }}>{formatINR(a.total)}</Text>}
+            />
+          </View>
+          <View style={{ marginTop: 14 }}>
+            {a.categories.map(c => (
+              <HBar
+                key={c.name}
+                label={`${c.name} · ${Math.round((c.amount / a.total) * 100)}%`}
+                value={formatINR(c.amount)}
+                ratio={c.amount / a.categories[0].amount}
+                color={categoryColor(c.name)}
+                right={c.deltaPct === null ? `New since ${label}` : `${c.deltaPct > 0 ? '+' : ''}${c.deltaPct}% vs ${label} (${formatINR(c.prev)})`}
+              />
+            ))}
+          </View>
+        </Card>
+      )}
+
+      {(a.movers.up.length > 0 || a.movers.down.length > 0) && (
+        <Card title="Biggest movers">
+          {a.movers.up.map(m => (
+            <View key={`u${m.name}`} style={styles.moverRow}>
+              <Text style={styles.moverName}>{m.name}</Text>
+              <Text style={{ color: COLORS.coral }}>▲ {formatINR(m.delta)} more</Text>
             </View>
           ))}
-        </View>
-      </View>
+          {a.movers.down.map(m => (
+            <View key={`d${m.name}`} style={styles.moverRow}>
+              <Text style={styles.moverName}>{m.name}</Text>
+              <Text style={{ color: COLORS.emerald }}>▼ {formatINR(-m.delta)} less</Text>
+            </View>
+          ))}
+        </Card>
+      )}
 
-      <SectionTitle>Top merchants</SectionTitle>
-      {current.merchants.slice(0, TOP_MERCHANTS).map(m => (
-        <View key={m.name} style={[GLASS_STYLES.card, styles.merchantRow]}>
-          <Text style={styles.merchantName} numberOfLines={1}>{m.name}</Text>
-          <Text style={styles.merchantAmount}>{formatINR(m.amount)}</Text>
+      <Card title="Day by day">
+        <BarChart
+          data={a.daily.map(d => ({ value: d.amount, label: period.mode === 'WEEK' ? d.label : (d.day % 5 === 1 ? String(d.day) : ''), frontColor: a.busiest && d.start === a.busiest.start ? COLORS.coral : COLORS.emerald }))}
+          barWidth={period.mode === 'WEEK' ? 24 : 6}
+          spacing={period.mode === 'WEEK' ? 14 : 3}
+          roundedTop hideRules noOfSections={3} yAxisThickness={0} xAxisThickness={0}
+          yAxisTextStyle={{ color: COLORS.textSecondary, fontSize: 10 }}
+          xAxisLabelTextStyle={{ color: COLORS.textSecondary, fontSize: 10 }}
+          height={110} isAnimated={false}
+        />
+      </Card>
+
+      <Card title="Spending patterns">
+        <HBar label="Weekdays" value={formatINR(a.patterns.weekday)} ratio={(100 - a.patterns.weekendShare) / 100} color={COLORS.blue} />
+        <HBar label="Weekends" value={formatINR(a.patterns.weekend)} ratio={a.patterns.weekendShare / 100} color={COLORS.amber} right={`${a.patterns.weekendShare}% of spending happens on weekends`} />
+        <Text style={[styles.cardTitle, { marginTop: 6, fontSize: 14 }]}>Time of day</Text>
+        {Object.entries(a.patterns.timeOfDay).map(([k, v]) => (
+          <HBar key={k} label={todLabels[k]} value={formatINR(v)} ratio={v / maxTod} color={COLORS.blue} />
+        ))}
+        <Text style={styles.sub}>
+          Small purchases (under ₹{a.patterns.small.threshold}): {a.patterns.small.count} totalling {formatINR(a.patterns.small.total)} — {a.patterns.small.share}% of spending.
+        </Text>
+      </Card>
+
+      {a.top.length > 0 && (
+        <Card title="Top expenses">
+          {a.top.map(t => (
+            <TouchableOpacity key={t.id} style={styles.topRow} onPress={() => onOpen(t.id)}>
+              <View style={{ flex: 1 }}>
+                <Text style={screenStyles.rowTitle} numberOfLines={1}>{t.merchant}</Text>
+                <Text style={screenStyles.rowSub}>{formatDate(t.timestamp)} · {t.category}</Text>
+              </View>
+              <Text style={[screenStyles.amount, { color: COLORS.coral }]}>{formatINR(t.amount)}</Text>
+            </TouchableOpacity>
+          ))}
+        </Card>
+      )}
+
+      <Card title="Trend">
+        <View style={styles.row}>
+          <Chip label="6 months" selected={trendMonths === 6} onPress={() => setTrendMonths(6)} />
+          <Chip label="12 months" selected={trendMonths === 12} onPress={() => setTrendMonths(12)} />
         </View>
-      ))}
+        <BarChart
+          data={trend.map((m, i) => ({ value: m.total, label: m.label, frontColor: i === trend.length - 1 ? COLORS.emerald : 'rgba(16,185,129,0.5)' }))}
+          barWidth={trendMonths === 6 ? 28 : 14}
+          spacing={trendMonths === 6 ? 14 : 8}
+          roundedTop hideRules noOfSections={3} yAxisThickness={0} xAxisThickness={0}
+          yAxisTextStyle={{ color: COLORS.textSecondary, fontSize: 10 }}
+          xAxisLabelTextStyle={{ color: COLORS.textSecondary, fontSize: 9 }}
+          height={110} isAnimated={false}
+        />
+        {catTrend.map(c => (
+          <View key={c.name} style={styles.sparkRow}>
+            <Text style={styles.sparkName} numberOfLines={1}>{c.name}</Text>
+            <MiniBars values={c.values} color={categoryColor(c.name)} />
+          </View>
+        ))}
+      </Card>
+
+      <Button title="Share report (PDF)" onPress={share} />
     </>
   )
 }
 
-// Only the visible month and the one before it (for the comparison) are observed.
-const ObservedMonth = withObservables(['year', 'month'], ({ year, month }) => {
-  const prev = shiftMonth({ year, month }, -1)
-  const from = monthBounds(prev.year, prev.month).start
-  const to = monthBounds(year, month).end
-  return {
-    txs: col('transactions').query(Q.where('is_deleted', false), Q.where('timestamp', Q.between(from, to - 1))),
-  }
-})(MonthView)
+const ObservedBody = withObservables(['since'], ({ since }) => ({
+  txs: watch(col('transactions').query(Q.where('is_deleted', false), Q.where('timestamp', Q.gte(since)))),
+  budgets: observeBudgets(),
+}))(({ txs, budgets, ...rest }) => <Body txs={txs} budgets={budgets.map(toPlain)} {...rest} />)
 
 export default function Analytics() {
-  const now = new Date()
-  const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() })
-  const isCurrent = ym.year === now.getFullYear() && ym.month === now.getMonth()
+  const [period, setPeriod] = useState(() => makePeriod('MONTH'))
+  const [trendMonths, setTrendMonths] = useState(6)
+  const [openId, setOpenId] = useState(null)
+  const [opened, setOpened] = useState(null)
+  const [requestDelete, undoBar] = useDeleteWithUndo()
+  const [since] = useState(() => Date.now() - HISTORY_MONTHS * 31 * 86400000)
+
+  const earliest = since + 31 * 86400000
+  const canGoBack = shiftPeriod(period, -1).end > earliest
+  const current = isCurrentPeriod(period)
+
+  const open = async (id) => {
+    try { setOpened(await col('transactions').find(id)); setOpenId(id) } catch { /* deleted meanwhile */ }
+  }
 
   return (
     <View style={screenStyles.container}>
       <Text style={screenStyles.header}>Analytics</Text>
+      <View style={styles.row}>
+        <Chip label="Week" selected={period.mode === 'WEEK'} onPress={() => setPeriod(makePeriod('WEEK'))} />
+        <Chip label="Month" selected={period.mode === 'MONTH'} onPress={() => setPeriod(makePeriod('MONTH'))} />
+      </View>
       <View style={styles.monthRow}>
-        <TouchableOpacity onPress={() => setYm(shiftMonth(ym, -1))} hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={COLORS.textPrimary} />
+        <TouchableOpacity onPress={() => setPeriod(shiftPeriod(period, -1))} disabled={!canGoBack} hitSlop={12}>
+          <Ionicons name="chevron-back" size={22} color={canGoBack ? COLORS.textPrimary : COLORS.cardBorder} />
         </TouchableOpacity>
-        <Text style={styles.monthLabel}>{monthLabel(ym)}</Text>
-        <TouchableOpacity onPress={() => setYm(shiftMonth(ym, 1))} disabled={isCurrent} hitSlop={12}>
-          <Ionicons name="chevron-forward" size={22} color={isCurrent ? COLORS.cardBorder : COLORS.textPrimary} />
+        <Text style={styles.monthLabel}>{periodLabel(period)}</Text>
+        <TouchableOpacity onPress={() => setPeriod(shiftPeriod(period, 1))} disabled={current} hitSlop={12}>
+          <Ionicons name="chevron-forward" size={22} color={current ? COLORS.cardBorder : COLORS.textPrimary} />
         </TouchableOpacity>
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-        <ObservedMonth year={ym.year} month={ym.month} />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
+        <ObservedBody since={since} period={period} trendMonths={trendMonths} setTrendMonths={setTrendMonths} onOpen={open} />
       </ScrollView>
+      {openId && opened ? <TransactionDetail transaction={opened} onClose={() => { setOpenId(null); setOpened(null) }} onDelete={requestDelete} /> : null}
+      {undoBar}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  row: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 8 },
   monthLabel: { color: COLORS.textPrimary, fontSize: 16, fontWeight: '600' },
-  chartCard: { alignItems: 'center', marginBottom: 24 },
-  cardTitle: { color: COLORS.textPrimary, fontSize: 18, fontWeight: '600', marginBottom: 16, alignSelf: 'flex-start' },
-  chartContainer: { alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  delta: { fontSize: 13, marginBottom: 12 },
-  legend: { width: '100%' },
-  legendRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  legendName: { color: COLORS.textPrimary, flex: 1, fontSize: 13 },
-  legendValue: { color: COLORS.textSecondary, fontSize: 13, fontVariant: ['tabular-nums'] },
-  merchantRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, padding: 16 },
-  merchantName: { color: COLORS.textPrimary, fontSize: 16, flex: 1, marginRight: 12 },
-  merchantAmount: { color: COLORS.coral, fontSize: 16, fontWeight: 'bold' },
+  card: { marginBottom: 16 },
+  cardTitle: { color: COLORS.textPrimary, fontSize: 17, fontWeight: '600', marginBottom: 12 },
+  big: { color: COLORS.textPrimary, fontSize: 32, fontWeight: 'bold', fontVariant: ['tabular-nums'], marginBottom: 6 },
+  sub: { color: COLORS.textSecondary, fontSize: 12, marginTop: 4 },
+  stats: { flexDirection: 'row', marginTop: 14 },
+  stat: { flex: 1 },
+  statLabel: { color: COLORS.textSecondary, fontSize: 11 },
+  statValue: { color: COLORS.textPrimary, fontSize: 15, fontWeight: '600', marginTop: 2 },
+  center: { alignItems: 'center' },
+  moverRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
+  moverName: { color: COLORS.textPrimary, fontSize: 14 },
+  topRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.cardBorder },
+  sparkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  sparkName: { color: COLORS.textPrimary, fontSize: 12, flex: 1, marginRight: 8 },
 })

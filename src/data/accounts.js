@@ -1,8 +1,8 @@
-import { col } from './util'
+import { col, watch } from './util'
 import { database } from '../db'
 
-export const observeAccounts = () => col('accounts').query()
-export const observeCards = () => col('credit_cards').query()
+export const observeAccounts = () => watch(col('accounts').query())
+export const observeCards = () => watch(col('credit_cards').query())
 
 export const createAccount = ({ name, type, balance, last4 }) =>
   database.write(() =>

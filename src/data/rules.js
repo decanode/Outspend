@@ -1,8 +1,8 @@
-import { col } from './util'
+import { col, watch } from './util'
 import { database } from '../db'
 import { applyRuleToExisting } from './transactions'
 
-export const observeRules = () => col('merchant_rules').query()
+export const observeRules = () => watch(col('merchant_rules').query())
 export const fetchRules = () => col('merchant_rules').query().fetch()
 
 /** Create a rule and retroactively apply it to matching transactions. */

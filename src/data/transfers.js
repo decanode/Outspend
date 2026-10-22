@@ -15,7 +15,7 @@ export const reconcileTransfers = async (days = 45) => {
   if (!pairs.length) return 0
   const ids = new Set(pairs.flatMap(p => [p.debitId, p.creditId]))
   await database.write(() =>
-    database.batch(...rows.filter(r => ids.has(r.id)).map(r => r.prepareUpdate(t => { t.transfer = 'AUTO' })))
+    database.batch(...rows.filter(r => ids.has(r.id)).map(r => r.prepareUpdate(t => { t.transfer = 'AUTO'; t.updated_at = Date.now() })))
   )
   return ids.size
 }

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { CATEGORY_NAMES } from '../constants/categories'
 import { exportTransactionsToCSV, exportTransactionsToJSON, exportGroupBillPdf } from '../services/ExportService'
@@ -7,9 +7,12 @@ import { getSettings, updateSettings, resetSettings } from '../services/Settings
 import { hasSmsPermission, requestSmsPermission, openAppSettings } from '../services/Permissions'
 import { importHistory, importInboxSince } from '../services/SmsIngest'
 import { wipeAllData } from '../data/transactions'
-import { monthBounds } from '../services/Analytics'
+import { monthBounds, setNumberStyle } from '../services/Analytics'
 import { formatDateTime, formatDate } from '../utils/format'
 import { Button, Chip, Sheet } from '../components/ui'
+import { PinSetupSheet, PinConfirmSheet, PassphraseSheet } from '../components/SecuritySheets'
+import { setPin, verifyPin, disableLock, biometricAvailable } from '../services/AppLock'
+import { createEncryptedBackup, pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
 import MerchantRules from './MerchantRules'
 import { useApp } from '../AppContext'
 
@@ -20,7 +23,7 @@ const Action = ({ title, onPress, danger }) => (
 )
 
 export default function Settings() {
-  const { access, restartOnboarding } = useApp()
+  const { access, restartOnboarding, bumpPrefs } = useApp()
   const [settings, setSettings] = useState(null)
   const [smsOk, setSmsOk] = useState(false)
   const [busy, setBusy] = useState(null)
@@ -29,14 +32,18 @@ export default function Settings() {
   const [showRange, setShowRange] = useState(false)
   const [billRange, setBillRange] = useState('MONTH')
   const [billCats, setBillCats] = useState([])
+  const [pinSheet, setPinSheet] = useState(null) // 'set' | 'disable'
+  const [passSheet, setPassSheet] = useState(null) // 'create' | 'restore'
+  const [restoreText, setRestoreText] = useState(null)
+  const [bioAvailable, setBioAvailable] = useState(false)
 
   const [tick, setTick] = useState(0)
   const reload = useCallback(() => setTick(t => t + 1), [])
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const [s, ok] = await Promise.all([getSettings(), hasSmsPermission()])
-      if (alive) { setSettings(s); setSmsOk(ok) }
+      const [s, ok, bio] = await Promise.all([getSettings(), hasSmsPermission(), biometricAvailable().catch(() => false)])
+      if (alive) { setSettings(s); setSmsOk(ok); setBioAvailable(bio) }
     })()
     return () => { alive = false }
   }, [tick])
@@ -85,9 +92,30 @@ export default function Settings() {
         text: 'Continue', style: 'destructive', onPress: () =>
           Alert.alert('Are you absolutely sure?', 'This cannot be undone. Export your data first if you may need it.', [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete everything', style: 'destructive', onPress: () => run('Deleting', async () => { await wipeAllData(); await resetSettings(); await restartOnboarding() }) },
+            { text: 'Delete everything', style: 'destructive', onPress: () => run('Deleting', async () => { await wipeAllData(); await disableLock(); await resetSettings(); await restartOnboarding() }) },
           ]),
       },
+    ])
+
+  const toggle = async (key, value) => {
+    setSettings(await updateSettings({ [key]: value }))
+  }
+
+  const changeNumberStyle = async (style) => {
+    setNumberStyle(style)
+    setSettings(await updateSettings({ numberStyle: style }))
+    bumpPrefs()
+  }
+
+  const startRestore = () =>
+    Alert.alert('Restore from backup?', 'This replaces everything currently in the app with the backup.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Choose file', onPress: async () => {
+          try {
+            const text = await pickBackupFile()
+            if (text) { setRestoreText(text); setPassSheet('restore') }
+          } catch { Alert.alert('Could not read that file', 'Pick the .outspend backup file.') }
+        } },
     ])
 
   const subscription = access.status === 'subscribed' ? 'Subscribed'
@@ -118,6 +146,55 @@ export default function Settings() {
         <Action title="Export data to JSON" onPress={() => run('Exporting', exportTransactionsToJSON)} />
         <Action title="Export group bill (PDF)" onPress={() => setShowBill(true)} />
 
+        <Text style={styles.section}>Security</Text>
+        <View style={[GLASS_STYLES.card, styles.card]}>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={styles.rowText}>App lock (PIN)</Text>
+              <Text style={styles.hint}>Ask for a PIN when opening the app or returning after 30 seconds.</Text>
+            </View>
+            <Switch value={!!(settings && settings.lockEnabled)} onValueChange={(v) => setPinSheet(v ? 'set' : 'disable')} trackColor={{ true: COLORS.emerald }} />
+          </View>
+          {settings && settings.lockEnabled && bioAvailable ? (
+            <View style={[styles.switchRow, { marginTop: 12 }]}>
+              <Text style={[styles.rowText, { flex: 1 }]}>Unlock with fingerprint</Text>
+              <Switch value={!!settings.lockBiometric} onValueChange={(v) => toggle('lockBiometric', v)} trackColor={{ true: COLORS.emerald }} />
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={styles.section}>Alerts</Text>
+        <View style={[GLASS_STYLES.card, styles.card]}>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={styles.rowText}>Unusual spend and duplicate charges</Text>
+              <Text style={styles.hint}>A notification when a payment is far above normal, or charged twice.</Text>
+            </View>
+            <Switch value={!settings || settings.alertsAnomaly !== false} onValueChange={(v) => toggle('alertsAnomaly', v)} trackColor={{ true: COLORS.emerald }} />
+          </View>
+          <View style={[styles.switchRow, { marginTop: 12 }]}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={styles.rowText}>Budget alerts</Text>
+              <Text style={styles.hint}>At 80% and 100% of a monthly budget.</Text>
+            </View>
+            <Switch value={!settings || settings.alertsBudget !== false} onValueChange={(v) => toggle('alertsBudget', v)} trackColor={{ true: COLORS.emerald }} />
+          </View>
+        </View>
+
+        <Text style={styles.section}>Display</Text>
+        <View style={[GLASS_STYLES.card, styles.card]}>
+          <Text style={styles.rowText}>Number format</Text>
+          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+            <Chip label="₹12,34,567 (lakh)" selected={!settings || settings.numberStyle !== 'INTL'} onPress={() => changeNumberStyle('IN')} />
+            <Chip label="₹1,234,567" selected={!!settings && settings.numberStyle === 'INTL'} onPress={() => changeNumberStyle('INTL')} />
+          </View>
+        </View>
+
+        <Text style={styles.section}>Backup</Text>
+        <Text style={[styles.hint, { marginBottom: 8 }]}>Cloud backup is off to keep your data private. Save an encrypted copy yourself before changing phones.</Text>
+        <Action title="Create encrypted backup" onPress={() => setPassSheet('create')} />
+        <Action title="Restore from backup" onPress={startRestore} />
+
         <Text style={styles.section}>Danger zone</Text>
         <Action title="Delete all data" danger onPress={wipe} />
       </ScrollView>
@@ -145,6 +222,26 @@ export default function Settings() {
         <Button title="Create PDF" onPress={exportBill} />
       </Sheet>
 
+      {pinSheet === 'set' ? (
+        <PinSetupSheet onClose={() => setPinSheet(null)} onSave={async (pin) => { await setPin(pin); setPinSheet(null); reload() }} />
+      ) : null}
+      {pinSheet === 'disable' ? (
+        <PinConfirmSheet title="Turn off app lock" onClose={() => setPinSheet(null)}
+          onVerify={async (pin) => { const r = await verifyPin(pin); if (r.ok) { await disableLock(); setPinSheet(null); reload() } return r.ok }} />
+      ) : null}
+      {passSheet === 'create' ? (
+        <PassphraseSheet mode="create" onClose={() => setPassSheet(null)}
+          onSubmit={async (pass) => { const c = await createEncryptedBackup(pass); setPassSheet(null); Alert.alert('Backup created', `${c.transactions} transactions saved. Keep the file and your passphrase safe.`) }} />
+      ) : null}
+      {passSheet === 'restore' ? (
+        <PassphraseSheet mode="restore" onClose={() => { setPassSheet(null); setRestoreText(null) }}
+          onSubmit={async (pass) => {
+            const c = await restoreEncryptedBackup(restoreText, pass)
+            setPassSheet(null); setRestoreText(null); reload(); bumpPrefs()
+            Alert.alert('Backup restored', `${c.transactions} transactions, ${c.accounts} accounts and your budgets, goals and rules are back.`)
+          }} />
+      ) : null}
+
       {showRules ? <MerchantRules onClose={() => setShowRules(false)} /> : null}
     </View>
   )
@@ -159,4 +256,5 @@ const styles = StyleSheet.create({
   hint: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   action: { marginBottom: 8 },
   busy: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 })

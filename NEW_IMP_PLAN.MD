@@ -551,3 +551,48 @@ Source: architect's feature proposal. Everything is on-device; no servers, no AI
 
 ### Build order used
 Schema v3 -> pure logic + tests (C1 first) -> data layer -> services (budget/anomaly alerts, lock, widget bridge) -> screens (Analytics, Plan, Ledger, Detail, Settings, Home) -> native widget -> docs. Status is recorded in section 12 when done.
+
+
+---
+
+## 12. Round 2 status (implemented, awaiting device test)
+
+Verified here: **197 tests pass**, lint is clean, the Android JS bundle builds. Not verified: anything on a device. The new Kotlin (widget provider/module) was not compiled, and layouts have never been rendered.
+
+| ID | State | Where |
+|---|---|---|
+| C1 Transfers detected | Done | Text rules at ingest + debit/credit pairing between your own accounts/cards (12 h, equal amount); `transfer` = AUTO/USER/NOT; excluded from spend and income, still move balances; "Mark as transfer" toggle in transaction detail; Ledger dims them and has "Hide transfers". |
+| A1-A10 Analytics | Done | Week/Month toggle and picker, summary with change vs previous, projection vs budget, cash flow, ranked categories with change, biggest movers, day-by-day bars (busiest highlighted), weekday/weekend, time of day, small purchases, top 10 (tap to open), 6/12-month trend + category sparklines, PDF report card. |
+| B1-B2 Budgets | Done | Plan tab; overall cap + per category; daily allowance; also shown on Home; notifications at 80% / 100% once per month per budget. |
+| B3 Goals | Done | Plan tab; add/take out money; required per month vs typical monthly surplus. |
+| B4 Alerts | Done | Unusual amount for a merchant/category and duplicate charge within 10 minutes; toggle in Settings. |
+| C2 Split expenses | Done | "Split with others" in transaction detail; your share drives analytics; "Owed to you" with Settle in Plan. |
+| C3 Tags | Done | In the transaction form; Ledger tag chips and a "spent" total for whatever is filtered. |
+| C4 Payday | Done | Detected from recurring large credits (or one labelled "salary"); Plan card and Home line within 10 days. |
+| C5 Upcoming bills | Done | Plan tab, next 30 days grouped by date, "due this week". |
+| D1 Widget | Done, **uncompiled** | Today's spend + budget left; updates after each change; tap opens the app. Add it from the launcher's widget list. |
+| D2 Quick filters | Done | This week, Uncategorised, Needs receipt, Hide transfers, tags. |
+| D3 App lock | Done | PIN 4-6 digits (PBKDF2 hash + salt in the Keystore-backed SecureStore), optional fingerprint, locks after 30 s away, timed lockout after 5 wrong tries, turned off only with the PIN. |
+| D4 Encrypted backup | Done | AES-256-GCM, PBKDF2-SHA256 100k; restore from Settings or from the first onboarding screen; ids preserved so links survive; tested with a full wipe-and-restore round trip. |
+| D5 Number format | Done | Lakh/crore or international, in Settings. |
+| D6 Light theme | **Deferred** | See decisions. |
+
+### Also fixed in this round
+- **Lists did not refresh after edits** (renaming, recategorising, reconciling): WatermelonDB's plain `observe()` only reacts to rows being added/removed. All lists now use column-aware observation (`watch`), with a test.
+
+### New decisions for you
+| # | Decision | Default in code | Alternative |
+|---|---|---|---|
+| D13 | Light theme | Dark only | A proper theme switch means refactoring every screen's styles; worth doing as its own task. Say go if you want it. |
+| D14 | Forgotten PIN | No reset; the only way back in is clearing the app's data (which erases everything), so the sheet tells users to keep a backup | Add a "reset with backup passphrase" path later |
+| D15 | Backup passphrase strength | Minimum 8 characters, PBKDF2 100k iterations (kept moderate so it finishes in a few seconds on a phone) | Raise iterations if you accept a longer wait |
+| D16 | Transfer text rules | Includes `cred.club` and wallet top-ups as transfers | Remove those two rules if you pay CRED for non-card-bill things |
+| D17 | Widget refresh | Updates after every change and every 30 min | Faster refresh costs battery |
+
+### Extra manual steps from this round
+1. Rebuild the dev build (new native widget code and new packages: secure-store, local-authentication, document-picker, crypto): `npx expo run:android` or an EAS build.
+2. Long-press the home screen, add the **Outspend** widget; check it shows today's spend after adding a transaction.
+3. Test the PIN lock: set it, background the app for over 30 s, return; try wrong PINs; test fingerprint on a device that has one.
+4. Test backup: create, share/save the `.outspend` file, wipe data, restore from onboarding; confirm accounts, budgets, goals, splits and links return.
+5. Seed a few transactions and walk through Analytics (week and month), Plan (budget alert at 80%), splits, tags, transfers (pay a card bill from savings: it should not count as spending).
+6. Check the Analytics charts and the 6-tab bar on a small phone; adjust labels if cramped.

@@ -10,3 +10,10 @@ export const toPlain = (model) => {
 }
 
 export const write = (fn) => database.write(fn)
+
+/**
+ * Observe a query so it also re-emits when a column of a matching row changes. A plain
+ * query.observe() only fires when rows are added or removed, which leaves lists stale after
+ * an edit (rename, recategorise, reconcile). Use this for every list a screen shows.
+ */
+export const watch = (query) => query.observeWithColumns(Object.keys(query.collection.schema.columns))

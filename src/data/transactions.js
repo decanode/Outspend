@@ -1,18 +1,18 @@
 import { Q } from '@nozbe/watermelondb'
 import { database } from '../db'
-import { col, toPlain } from './util'
+import { col, toPlain, watch } from './util'
 import { findRule } from '../services/RuleEngine'
 
 const live = Q.where('is_deleted', false)
 
 export const observeLiveTransactions = () =>
-  col('transactions').query(live, Q.sortBy('timestamp', Q.desc))
+  watch(col('transactions').query(live, Q.sortBy('timestamp', Q.desc)))
 
 export const observeRecentTransactions = (n = 5) =>
-  col('transactions').query(live, Q.sortBy('timestamp', Q.desc), Q.take(n))
+  watch(col('transactions').query(live, Q.sortBy('timestamp', Q.desc), Q.take(n)))
 
 export const observeNeedsReview = () =>
-  col('transactions').query(live, Q.where('needs_review', true), Q.sortBy('timestamp', Q.desc))
+  watch(col('transactions').query(live, Q.where('needs_review', true), Q.sortBy('timestamp', Q.desc)))
 
 export const fetchLiveTransactions = async () => (await col('transactions').query(live).fetch()).map(toPlain)
 

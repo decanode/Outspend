@@ -7,6 +7,8 @@ import { initNotifications } from '../services/NotificationService'
 import { updateSettings, DEFAULT_IMPORT_DAYS } from '../services/Settings'
 import { importHistory } from '../services/SmsIngest'
 import { ensureTrialStarted } from '../services/BillingService'
+import { pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
+import { PassphraseSheet } from '../components/SecuritySheets'
 
 const RANGES = [[30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year']]
 
@@ -17,6 +19,7 @@ export default function Onboarding({ onComplete }) {
   const [days, setDays] = useState(DEFAULT_IMPORT_DAYS)
   const [importing, setImporting] = useState(false)
   const [progress, setProgress] = useState(null)
+  const [restoreText, setRestoreText] = useState(null)
 
   const askSms = async () => {
     const status = await requestSmsPermission()
@@ -60,6 +63,8 @@ export default function Onboarding({ onComplete }) {
             <Text style={styles.title}>100% private.</Text>
             <Text style={styles.subtitle}>Outspend never sends your data to any server. All processing happens right here on your phone.</Text>
             <Button title="Next" onPress={() => setStep(2)} style={styles.full} />
+            <Button title="Restore from a backup" variant="ghost" style={styles.full}
+              onPress={async () => { try { const t = await pickBackupFile(); if (t) setRestoreText(t) } catch { /* picker cancelled or unreadable */ } }} />
           </>
         )}
         {step === 2 && (
@@ -91,6 +96,10 @@ export default function Onboarding({ onComplete }) {
           </>
         )}
       </View>
+      {restoreText ? (
+        <PassphraseSheet mode="restore" onClose={() => setRestoreText(null)}
+          onSubmit={async (pass) => { await restoreEncryptedBackup(restoreText, pass); await ensureTrialStarted(); onComplete() }} />
+      ) : null}
     </View>
   )
 }
