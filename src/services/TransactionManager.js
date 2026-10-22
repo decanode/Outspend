@@ -26,7 +26,7 @@ const lightweight = (m) => ({
  * user deleted is never resurrected by a later re-import.
  */
 export const ingestMessages = async (messages, { onProgress } = {}) => {
-  if (!messages.length) return { created: 0, merged: 0, skipped: 0, needsReview: [] }
+  if (!messages.length) return { created: 0, merged: 0, skipped: 0, needsReview: [], createdTx: [] }
 
   const minTs = Math.min(...messages.map(m => m.timestamp))
   const maxTs = Math.max(...messages.map(m => m.timestamp))
@@ -70,6 +70,7 @@ export const ingestMessages = async (messages, { onProgress } = {}) => {
       r.payment_mode = d.payment_mode
       r.merchant_rule_id = d.merchant_rule_id
       r.linked_transaction_id = idByTemp.get(d.linked_transaction_id) || d.linked_transaction_id
+      r.transfer = d.transfer
       r.created_at = now
       r.updated_at = now
     }))
@@ -91,11 +92,15 @@ export const ingestMessages = async (messages, { onProgress } = {}) => {
     }
   })
 
+  const createdTx = plan.creates.map(d => ({
+    id: idByTemp.get(d.tempId), amount: d.amount, type: d.type, merchant: d.merchant,
+    category: d.category, timestamp: d.timestamp, transfer: d.transfer,
+  }))
   const needsReview = plan.creates
     .filter(d => d.needs_review)
     .map(d => ({ id: idByTemp.get(d.tempId), amount: d.amount, type: d.type, payment_mode: d.payment_mode }))
 
-  return { created: plan.creates.length, merged: plan.updates.length, skipped: plan.skipped, needsReview }
+  return { created: plan.creates.length, merged: plan.updates.length, skipped: plan.skipped, needsReview, createdTx }
 }
 
 /** Live path: one message from the broadcast receiver. */

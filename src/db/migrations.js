@@ -3,6 +3,48 @@ import { schemaMigrations, addColumns, createTable } from '@nozbe/watermelondb/S
 export default schemaMigrations({
   migrations: [
     {
+      toVersion: 3,
+      steps: [
+        addColumns({
+          table: 'transactions',
+          columns: [
+            { name: 'transfer', type: 'string', isOptional: true },
+            { name: 'tags', type: 'string', isOptional: true },
+            { name: 'my_share', type: 'number', isOptional: true },
+          ],
+        }),
+        createTable({
+          name: 'budgets',
+          columns: [
+            { name: 'category', type: 'string' },
+            { name: 'amount', type: 'number' },
+            { name: 'created_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'goals',
+          columns: [
+            { name: 'name', type: 'string' },
+            { name: 'target_amount', type: 'number' },
+            { name: 'saved_amount', type: 'number' },
+            { name: 'target_date', type: 'number' },
+            { name: 'created_at', type: 'number' },
+          ],
+        }),
+        createTable({
+          name: 'splits',
+          columns: [
+            { name: 'transaction_id', type: 'string', isIndexed: true },
+            { name: 'person', type: 'string' },
+            { name: 'amount', type: 'number' },
+            { name: 'is_settled', type: 'boolean' },
+            { name: 'settled_at', type: 'number', isOptional: true },
+            { name: 'created_at', type: 'number' },
+          ],
+        }),
+      ],
+    },
+    {
       toVersion: 2,
       steps: [
         addColumns({

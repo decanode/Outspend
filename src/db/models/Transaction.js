@@ -22,6 +22,9 @@ export default class Transaction extends Model {
   @field('notes') notes
   @field('merchant_rule_id') merchant_rule_id
   @field('linked_transaction_id') linked_transaction_id
+  @field('transfer') transfer
+  @field('tags') tags
+  @field('my_share') my_share
   @field('created_at') created_at
   @field('updated_at') updated_at
 }

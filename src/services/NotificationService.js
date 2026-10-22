@@ -1,10 +1,13 @@
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
 import { fetchSubscriptions, updateSubscription } from '../data/subscriptions'
-import { fetchLiveTransactions } from '../data/transactions'
+import { fetchLiveTransactions, fetchTransactionsBetween } from '../data/transactions'
 import { col, toPlain } from '../data/util'
 import { rollForward } from './SubscriptionDetector'
-import { cardSpend, cycleStart, utilisation, utilisationLevel, formatINR } from './Analytics'
+import { fetchBudgets } from '../data/budgets'
+import { budgetStatus } from './Budgets'
+import { makePeriod } from './Insights'
+import { cardSpend, cycleStart, utilisation, utilisationLevel, formatINR, aggregateSpend } from './Analytics'
 import { getSettings, updateSettings } from './Settings'
 import { nameTransactionById } from '../data/naming'
 
@@ -172,4 +175,45 @@ export const handleNotificationResponse = async (response) => {
   if (!id || !name) return false
   await nameTransactionById(id, name)
   return true
+}
+
+/** Generic heads-up (unusual spend, duplicate charge, budget). Skipped without notification permission. */
+export const notifyAlert = async (title, body, data = {}) => {
+  const perm = await Notifications.getPermissionsAsync()
+  if (!perm.granted) return null
+  await ensureNotificationSetup()
+  return Notifications.scheduleNotificationAsync({ content: { title, body, data }, trigger: null })
+}
+
+const LEVEL_RANK = { ok: 0, warning: 1, over: 2 }
+
+/**
+ * Tell the user when a budget reaches 80% or 100% for the month. Each level is announced
+ * once per budget per month.
+ */
+export const checkBudgets = async () => {
+  const settings = await getSettings()
+  if (!settings.alertsBudget) return
+  const budgets = (await fetchBudgets()).map(toPlain)
+  if (!budgets.length) return
+
+  const month = makePeriod('MONTH')
+  const txs = await fetchTransactionsBetween(month.start, month.end)
+  const status = budgetStatus(budgets, aggregateSpend(txs, month.start, month.end), month.end)
+  const alerts = {}
+  for (const [k, v] of Object.entries(settings.budgetAlerts || {})) if (k.startsWith(`${month.start}:`)) alerts[k] = v
+
+  let changed = Object.keys(alerts).length !== Object.keys(settings.budgetAlerts || {}).length
+  for (const row of [status.overall, ...status.categories].filter(Boolean)) {
+    const key = `${month.start}:${row.id}`
+    if (LEVEL_RANK[row.level] <= LEVEL_RANK[alerts[key] || 'ok']) continue
+    const name = row.category === 'ALL' ? 'Monthly budget' : `${row.category} budget`
+    await notifyAlert(
+      row.level === 'over' ? `${name} exceeded` : `${name} at ${Math.round(row.ratio * 100)}%`,
+      `${formatINR(row.spent)} spent of ${formatINR(row.amount)}.`
+    )
+    alerts[key] = row.level
+    changed = true
+  }
+  if (changed) await updateSettings({ budgetAlerts: alerts })
 }

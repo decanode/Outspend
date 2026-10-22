@@ -15,30 +15,52 @@ export const monthLabel = ({ year, month }) =>
 
 const live = (txs) => txs.filter(t => !t.is_deleted)
 
+/** A transfer between your own accounts/cards (or a card bill payment) is not spending or income. */
+export const isTransfer = (t) => t.transfer === 'AUTO' || t.transfer === 'USER'
+
+const hasShare = (t) => t.my_share !== null && t.my_share !== undefined && t.my_share >= 0
+
+/** What a debit really cost you: your share of a split payment, else the full amount. */
+export const shareOf = (t) => (hasShare(t) ? t.my_share : t.amount)
+
 /**
- * Net spend for [start, end): DEBIT adds, REFUND subtracts. CREDIT (income) is
- * ignored. A linked refund is netted against the original debit's category.
+ * Signed spend entries for [start, end): DEBIT adds your share, REFUND subtracts (scaled
+ * to your share when the original was split). CREDIT and transfers are ignored.
  */
-export const aggregateSpend = (txs, start, end) => {
+export const spendEntries = (txs, start, end) => {
   const all = live(txs)
   const byId = new Map(all.map(t => [t.id, t]))
-  const inRange = all.filter(t => t.timestamp >= start && t.timestamp < end)
+  const out = []
+  for (const t of all) {
+    if (t.timestamp < start || t.timestamp >= end || t.type === 'CREDIT' || isTransfer(t)) continue
+    const linked = t.linked_transaction_id ? byId.get(t.linked_transaction_id) : null
+    let amount
+    if (t.type === 'REFUND') {
+      const factor = linked && hasShare(linked) && linked.amount > 0 ? linked.my_share / linked.amount : 1
+      amount = -t.amount * factor
+    } else {
+      amount = shareOf(t)
+    }
+    out.push({
+      t,
+      amount,
+      category: t.category || (linked && linked.category) || UNCATEGORIZED,
+      merchant: (linked && linked.merchant) || t.merchant,
+    })
+  }
+  return out
+}
 
+export const aggregateSpend = (txs, start, end) => {
   const byCategory = new Map()
   const byMerchant = new Map()
   let total = 0
-
   const add = (map, key, value) => map.set(key, (map.get(key) || 0) + value)
 
-  for (const t of inRange) {
-    if (t.type === 'CREDIT') continue
-    const sign = t.type === 'REFUND' ? -1 : 1
-    const linked = t.linked_transaction_id ? byId.get(t.linked_transaction_id) : null
-    const category = t.category || (linked && linked.category) || UNCATEGORIZED
-    const merchant = (linked && linked.merchant) || t.merchant
-    add(byCategory, category, sign * t.amount)
-    add(byMerchant, merchant, sign * t.amount)
-    total += sign * t.amount
+  for (const e of spendEntries(txs, start, end)) {
+    add(byCategory, e.category, e.amount)
+    add(byMerchant, e.merchant, e.amount)
+    total += e.amount
   }
 
   const toList = (map) =>
@@ -53,6 +75,12 @@ export const aggregateSpend = (txs, start, end) => {
     merchants: toList(byMerchant),
   }
 }
+
+/** Money received in [start, end): salary, gifts, interest. Refunds and transfers are not income. */
+export const incomeTotal = (txs, start, end) =>
+  live(txs)
+    .filter(t => t.type === 'CREDIT' && !isTransfer(t) && t.timestamp >= start && t.timestamp < end)
+    .reduce((sum, t) => sum + t.amount, 0)
 
 const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime() }
 
@@ -104,5 +132,9 @@ export const cardSpend = (card, txs, now = Date.now()) => {
 export const utilisation = (spend, limit) => (limit > 0 ? Math.min(spend / limit, 1) : 0)
 export const utilisationLevel = (ratio) => (ratio >= 0.95 ? 'critical' : ratio >= 0.8 ? 'warning' : 'ok')
 
+let numberLocale = 'en-IN'
+/** 'IN' groups as 1,00,000 (lakh/crore); 'INTL' as 100,000. */
+export const setNumberStyle = (style) => { numberLocale = style === 'INTL' ? 'en-US' : 'en-IN' }
+
 export const formatINR = (n) =>
-  '₹' + Math.abs(n).toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: Number.isInteger(n) ? 0 : 2 })
+  '₹' + Math.abs(n).toLocaleString(numberLocale, { maximumFractionDigits: 2, minimumFractionDigits: Number.isInteger(n) ? 0 : 2 })

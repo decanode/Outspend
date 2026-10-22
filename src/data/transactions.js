@@ -38,6 +38,8 @@ export const createTransaction = (fields) =>
       tx.account_id = fields.account_id || null
       tx.card_id = fields.card_id || null
       tx.notes = fields.notes || null
+      tx.tags = fields.tags || null
+      tx.transfer = fields.transfer || null
       tx.created_at = now
       tx.updated_at = now
     })

@@ -15,6 +15,12 @@ export const DEFAULT_SETTINGS = {
   dismissedSubscriptions: [], // keys of suggestions the user dismissed
   cardAlerts: {}, // cardId -> { cycle, level } already notified
   hasSeenSmsPrompt: false,
+  lockEnabled: false, // PIN lock on
+  lockBiometric: false, // allow fingerprint to unlock
+  numberStyle: 'IN', // IN = lakh/crore grouping, INTL = millions
+  alertsAnomaly: true, // unusual-spend and duplicate-charge alerts
+  alertsBudget: true, // budget threshold alerts
+  budgetAlerts: {}, // `${periodStart}:${budgetId}` -> level already notified
 }
 
 let cache = null

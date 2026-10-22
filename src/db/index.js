@@ -8,6 +8,9 @@ import MerchantRule from './models/MerchantRule'
 import CreditCard from './models/CreditCard'
 import Subscription from './models/Subscription'
 import Account from './models/Account'
+import Budget from './models/Budget'
+import Goal from './models/Goal'
+import Split from './models/Split'
 
 const adapter = new SQLiteAdapter({
   schema,
@@ -26,6 +29,9 @@ export const database = new Database({
     MerchantRule,
     CreditCard,
     Subscription,
-    Account
+    Account,
+    Budget,
+    Goal,
+    Split
   ],
 })

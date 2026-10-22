@@ -4,6 +4,7 @@ import { hasSmsPermission } from './Permissions'
 import { getSettings, updateSettings, DEFAULT_IMPORT_DAYS } from './Settings'
 import { isTransactionalSender } from './RegexEngine'
 import { checkCardLimits, notifyNeedsName } from './NotificationService'
+import { afterChange, afterLiveCapture } from './PostChange'
 
 const PAGE_SIZE = 500
 
@@ -49,6 +50,7 @@ export const importInboxSince = (sinceMs, { onProgress } = {}) =>
       const s = await getSettings()
       await updateSettings({ lastImportedTimestamp: Math.max(newest, s.lastImportedTimestamp || 0) })
     }
+    if (totals.created || totals.merged) await afterChange() // quiet: no alerts for old history
     return totals
   })
 
@@ -89,6 +91,7 @@ export const handleIncomingSms = (msg) =>
     if (r.created || r.merged) {
       await updateSettings({ lastImportedTimestamp: Math.max(msg.timestamp, settings.lastImportedTimestamp || 0) })
       await checkCardLimits().catch(e => console.error('Card limit check failed', e))
+      await afterLiveCapture(r.createdTx)
     }
     for (const tx of r.needsReview) {
       await notifyNeedsName(tx).catch(e => console.error('Could not send notification', e))

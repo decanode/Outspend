@@ -3,7 +3,8 @@ import * as Print from 'expo-print'
 import { shareAsync } from 'expo-sharing'
 import { fetchLiveTransactions } from '../data/transactions'
 import { col } from '../data/util'
-import { toCsv, toJson, buildBillHtml } from './ExportFormat'
+import { toCsv, toJson, buildBillHtml, buildReportHtml } from './ExportFormat'
+import { analyzePeriod, periodLabel } from './Insights'
 
 const accountNames = async () => {
   const [accounts, cards] = await Promise.all([col('accounts').query().fetch(), col('credit_cards').query().fetch()])
@@ -46,4 +47,11 @@ export const exportGroupBillPdf = async ({ start, end, categories, rangeLabel })
   const { uri } = await Print.printToFileAsync({ html: buildBillHtml(txs, { rangeLabel }) })
   await shareAsync(uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf', dialogTitle: 'Share bill' })
   return { count: txs.length }
+}
+
+/** Report card PDF for a week or month, shared via the share sheet. */
+export const exportPeriodReport = async (period) => {
+  const txs = await fetchLiveTransactions()
+  const { uri } = await Print.printToFileAsync({ html: buildReportHtml(analyzePeriod(txs, period), periodLabel(period)) })
+  await shareAsync(uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf', dialogTitle: 'Share report' })
 }

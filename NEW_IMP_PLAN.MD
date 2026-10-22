@@ -501,3 +501,53 @@ Defaults are what is in the code now. Reply with your choice (or edit this file)
 ### F. Repo housekeeping
 - Review and merge the PR from `feat/implementation` into `main` (D10).
 - Confirm the docs you validated against (`docs/Expense Tracker Design Document_2.pdf`, `docs/UI design.html`) should be committed; they are not in the repo.
+
+---
+
+## 11. Round 2: Additional features (requested 2026-10-22, "complete at one shot")
+
+Source: architect's feature proposal. Everything is on-device; no servers, no AI services. Schema goes to **v3**.
+
+### R2-A Deeper spending analysis (Analytics tab rebuilt)
+| ID | Feature | Design |
+|---|---|---|
+| A1 | Week/Month toggle + period picker | Weeks run Monday-Sunday. Pure `Insights.js`. |
+| A2 | Day-by-day bars, busiest day | Daily buckets inside the selected period. |
+| A3 | Ranked categories/merchants with change vs previous period | Delta amount and % per category. |
+| A4 | Biggest movers | Top 3 risers and top 3 fallers by absolute change. |
+| A5 | Spending patterns | Weekday vs weekend, time-of-day buckets, small purchases (< ₹200) count/total/share. |
+| A6 | Top 10 single expenses | Tap opens the transaction. |
+| A7 | Report card + PDF | Summary page (spent, income, savings rate, top 3 categories, unusual items) shared as PDF. |
+| A8 | 6/12-month trend | Totals chart + sparklines for the top 5 categories. |
+| A9 | Run-rate projection | "At this pace you will spend ₹X this month", vs budget. |
+| A10 | Cash-flow | Income vs expenses vs net and savings rate per period. |
+
+### R2-B Budgets and goals (new **Plan** tab)
+| ID | Feature | Design |
+|---|---|---|
+| B1 | Category budgets | New `budgets` table; progress bars; notifications at 80% and 100% (once per period/level). |
+| B2 | Overall monthly cap + daily allowance | "You can spend ₹X/day for the rest of the month". Also shown on Home. |
+| B3 | Savings goals | New `goals` table: target, date, saved so far; required per-month amount vs your recent surplus. |
+| B4 | Unusual-spend and duplicate-charge alerts | Pure detector (amount far above the merchant/category norm; same merchant+amount within 10 min). Notification after capture. |
+
+### R2-C Smarter capture and money tracking
+| ID | Feature | Design |
+|---|---|---|
+| C1 | **Transfers detected** (build first) | Text rules (card bill payment, self transfer) + pairing a debit and credit of the same amount between your own accounts/cards within 12 h. Marked `transfer` = AUTO / USER / NOT. Excluded from spend and income but still move balances. |
+| C2 | Split expenses | New `splits` table; `my_share` on the transaction replaces the amount in analytics; "Owed to you" by person with Mark settled. |
+| C3 | Tags | Comma tags on transactions; Ledger tag filter and a total for whatever is filtered (a trip's full cost). |
+| C4 | Salary detection + payday countdown | Recurring large credit around the same day each month. |
+| C5 | Upcoming bills calendar | Next 30 days of subscription renewals, grouped by date, with "due this week". |
+
+### R2-D Everyday usability and safety
+| ID | Feature | Design |
+|---|---|---|
+| D1 | Home-screen widget (Android) | Today's spend + budget left. Native Kotlin; **not compiled**. |
+| D2 | Quick filters in Ledger | This week, Uncategorised, Needs receipt, hide transfers. |
+| D3 | App lock | PIN (hash + salt in SecureStore) with optional fingerprint; locks after 30 s in background; 5 wrong tries = timed lockout. |
+| D4 | Encrypted backup and restore | AES-256-GCM, key from passphrase via PBKDF2-SHA256; restore keeps ids so links survive. Pairs with the "no cloud backup" decision. |
+| D5 | Number format | Indian (lakh/crore) or international grouping. |
+| D6 | Light/dark theme | **Deferred**: colours are baked into module-level styles across every screen; doing it properly is a separate refactor. Needs your go-ahead. |
+
+### Build order used
+Schema v3 -> pure logic + tests (C1 first) -> data layer -> services (budget/anomaly alerts, lock, widget bridge) -> screens (Analytics, Plan, Ledger, Detail, Settings, Home) -> native widget -> docs. Status is recorded in section 12 when done.

@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb'
 
 export default appSchema({
-  version: 2,
+  version: 3,
   tables: [
     tableSchema({
       name: 'transactions',
@@ -24,6 +24,9 @@ export default appSchema({
         { name: 'notes', type: 'string', isOptional: true },
         { name: 'merchant_rule_id', type: 'string', isOptional: true },
         { name: 'linked_transaction_id', type: 'string', isOptional: true }, // refund -> original debit
+        { name: 'transfer', type: 'string', isOptional: true }, // AUTO | USER | NOT (null = not evaluated)
+        { name: 'tags', type: 'string', isOptional: true }, // comma separated, lowercase
+        { name: 'my_share', type: 'number', isOptional: true }, // your part of a split payment
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ]
@@ -67,6 +70,35 @@ export default appSchema({
         { name: 'balance', type: 'number' }, // balance as of last_reconciled_at
         { name: 'last_reconciled_at', type: 'number' },
         { name: 'last4', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
+      name: 'budgets',
+      columns: [
+        { name: 'category', type: 'string' }, // category name, or ALL for the overall monthly cap
+        { name: 'amount', type: 'number' },
+        { name: 'created_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
+      name: 'goals',
+      columns: [
+        { name: 'name', type: 'string' },
+        { name: 'target_amount', type: 'number' },
+        { name: 'saved_amount', type: 'number' },
+        { name: 'target_date', type: 'number' },
+        { name: 'created_at', type: 'number' },
+      ]
+    }),
+    tableSchema({
+      name: 'splits',
+      columns: [
+        { name: 'transaction_id', type: 'string', isIndexed: true },
+        { name: 'person', type: 'string' },
+        { name: 'amount', type: 'number' }, // what this person owes you
+        { name: 'is_settled', type: 'boolean' },
+        { name: 'settled_at', type: 'number', isOptional: true },
         { name: 'created_at', type: 'number' },
       ]
     }),

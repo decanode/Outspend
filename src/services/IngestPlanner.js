@@ -1,5 +1,6 @@
 import { parseSmsTransaction } from './RegexEngine'
 import { categorize } from './RuleEngine'
+import { looksLikeTransfer } from './TransferDetector'
 
 export const DEDUPE_WINDOW_MS = 2 * 60 * 60 * 1000
 export const REFUND_LINK_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
@@ -88,6 +89,7 @@ export const planIngest = (messages, ctx) => {
       account_id: account ? account.id : null,
       card_id: card ? card.id : null,
       linked_transaction_id: null,
+      transfer: looksLikeTransfer(`${parsed.merchant} ${parsed.raw_text}`) ? 'AUTO' : null,
     }
 
     if (parsed.type === 'REFUND') {

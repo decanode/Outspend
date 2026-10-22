@@ -1,4 +1,4 @@
-import { csvField, toCsv, toJson, escapeHtml, buildBillHtml } from '../src/services/ExportFormat'
+import { csvField, toCsv, toJson, escapeHtml, buildBillHtml, buildReportHtml } from '../src/services/ExportFormat'
 
 const tx = (o) => ({ id: '1', timestamp: Date.UTC(2026, 9, 5, 12), merchant: 'Shop', amount: 100, type: 'DEBIT', category: 'Shopping', source: 'SMS', ...o })
 
@@ -13,7 +13,7 @@ describe('csv', () => {
   test('full export keeps commas in merchant names', () => {
     const csv = toCsv([tx({ merchant: 'Ravi, Sons & Co', notes: 'split "dinner"' })])
     const lines = csv.trim().split('\r\n')
-    expect(lines[0]).toBe('Date,Merchant,Amount,Type,Category,Source,Account,Notes,Has receipt')
+    expect(lines[0]).toBe('Date,Merchant,Amount,Type,Category,Source,Account,Notes,Has receipt,Your share,Tags,Transfer')
     expect(lines[1]).toContain('"Ravi, Sons & Co"')
     expect(lines[1]).toContain('"split ""dinner"""')
   })
@@ -67,5 +67,29 @@ describe('computeAccess', () => {
   })
   test('no trial start recorded yet starts a fresh trial', () => {
     expect(computeAccess({ now, trialStartedAt: null, entitled: false })).toMatchObject({ status: 'trial', trialDaysLeft: 30 })
+  })
+})
+
+describe('csv extras and report', () => {
+  test('share, tags and transfer columns', () => {
+    const csv = toCsv([tx({ my_share: 250, tags: 'goa,trip', transfer: 'AUTO' })])
+    expect(csv.trim().split('\r\n')[1]).toMatch(/,No,250,"?goa,trip"?,Yes$/)
+    const json = JSON.parse(toJson([tx({ my_share: 250, tags: 'goa,trip', transfer: 'USER' })]))
+    expect(json.transactions[0]).toMatchObject({ yourShare: 250, tags: ['goa', 'trip'], transfer: true })
+  })
+  test('report card contains the numbers and escapes names', () => {
+    const a = {
+      total: 5000, deltaPct: 12, income: 20000, net: 15000, savingsRate: 75, avgPerDay: 166.6,
+      categories: [{ name: '<b>Food</b>', amount: 3000, deltaPct: null }],
+      top: [{ timestamp: Date.UTC(2026, 9, 5), merchant: 'Swiggy', category: 'Food & Dining', amount: 1200 }],
+      movers: { up: [{ name: 'Dining', delta: 900 }], down: [] },
+    }
+    const html = buildReportHtml(a, 'October 2026')
+    expect(html).toContain('₹5,000')
+    expect(html).toContain('+12%')
+    expect(html).toContain('(75%)')
+    expect(html).toContain('&lt;b&gt;Food&lt;/b&gt;')
+    expect(html).not.toContain('<b>Food</b>')
+    expect(html).toContain('Biggest rise')
   })
 })
