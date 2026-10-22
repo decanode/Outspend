@@ -1,87 +1,162 @@
-import React from 'react'
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native'
+import React, { useCallback, useEffect, useState } from 'react'
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
-import { exportTransactionsToCSV } from '../services/ExportService'
-import * as Print from 'expo-print'
-import { shareAsync } from 'expo-sharing'
+import { CATEGORY_NAMES } from '../constants/categories'
+import { exportTransactionsToCSV, exportTransactionsToJSON, exportGroupBillPdf } from '../services/ExportService'
+import { getSettings, updateSettings, resetSettings } from '../services/Settings'
+import { hasSmsPermission, requestSmsPermission, openAppSettings } from '../services/Permissions'
+import { importHistory, importInboxSince } from '../services/SmsIngest'
+import { wipeAllData } from '../data/transactions'
+import { monthBounds } from '../services/Analytics'
+import { formatDateTime, formatDate } from '../utils/format'
+import { Button, Chip, Sheet } from '../components/ui'
+import MerchantRules from './MerchantRules'
+import { useApp } from '../AppContext'
+
+const RANGES = [[30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year']]
+
+const Action = ({ title, onPress, danger }) => (
+  <Button title={title} variant={danger ? 'danger' : 'primary'} onPress={onPress} style={styles.action} />
+)
 
 export default function Settings() {
-  const handleExport = async () => {
-    try {
-      await exportTransactionsToCSV();
-      Alert.alert("Success", "Data exported to Downloads folder securely.");
-    } catch (e) {
-      Alert.alert("Error", "Could not export data.");
-    }
-  };
+  const { access, restartOnboarding } = useApp()
+  const [settings, setSettings] = useState(null)
+  const [smsOk, setSmsOk] = useState(false)
+  const [busy, setBusy] = useState(null)
+  const [showRules, setShowRules] = useState(false)
+  const [showBill, setShowBill] = useState(false)
+  const [showRange, setShowRange] = useState(false)
+  const [billRange, setBillRange] = useState('MONTH')
+  const [billCats, setBillCats] = useState([])
 
-  const handleExportPDF = async () => {
-    try {
-      const html = `
-        <html>
-          <body style="font-family: sans-serif; padding: 20px;">
-            <h1 style="color: #10b981;">Outspend Group Bill Summary</h1>
-            <table style="width: 100%; text-align: left; border-collapse: collapse;">
-              <tr style="border-bottom: 1px solid #ccc;">
-                <th>Date</th><th>Merchant</th><th>Amount</th>
-              </tr>
-              <tr><td>2026-09-26</td><td>Swiggy</td><td>₹4,500</td></tr>
-              <tr><td>2026-09-27</td><td>Uber</td><td>₹1,800</td></tr>
-            </table>
-          </body>
-        </html>
-      `;
-      const { uri } = await Print.printToFileAsync({ html });
-      await shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
-    } catch (e) {
-      Alert.alert("Error", "Could not generate PDF.");
+  const [tick, setTick] = useState(0)
+  const reload = useCallback(() => setTick(t => t + 1), [])
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const [s, ok] = await Promise.all([getSettings(), hasSmsPermission()])
+      if (alive) { setSettings(s); setSmsOk(ok) }
+    })()
+    return () => { alive = false }
+  }, [tick])
+
+  const run = async (label, job) => {
+    setBusy(label)
+    try { return await job() } catch (e) { console.error(e); Alert.alert('Something went wrong', String(e.message || e)) } finally { setBusy(null); reload() }
+  }
+
+  const resync = () => run('Syncing', async () => {
+    if (!(await hasSmsPermission()) && (await requestSmsPermission()) !== 'granted') {
+      return Alert.alert('SMS access needed', 'Allow SMS access to sync bank messages.', [{ text: 'Open settings', onPress: openAppSettings }, { text: 'Cancel' }])
     }
-  };
+    const s = await getSettings()
+    const r = await importInboxSince(s.onboardingStartDate || Date.now() - 90 * 86400000)
+    await updateSettings({ lastAuditAt: Date.now() })
+    Alert.alert('Sync complete', `${r.created} new, ${r.merged} matched to your entries.`)
+  })
+
+  const changeStart = (days) => {
+    setShowRange(false)
+    run('Importing', async () => {
+      await updateSettings({ onboardingStartDate: Date.now() - days * 86400000 })
+      const r = await importHistory()
+      Alert.alert('History imported', `${r.created} new transactions found.`)
+    })
+  }
+
+  const exportBill = () => run('Exporting', async () => {
+    const now = new Date()
+    const { start: monthStart, end: monthEnd } = monthBounds(now.getFullYear(), now.getMonth())
+    const range = billRange === 'MONTH' ? { start: monthStart, end: monthEnd, label: 'This month' }
+      : billRange === '30D' ? { start: Date.now() - 30 * 86400000, end: Date.now() + 1, label: 'Last 30 days' }
+      : { start: 0, end: Date.now() + 1, label: 'All time' }
+    const res = await exportGroupBillPdf({
+      start: range.start, end: range.end, categories: billCats.length ? billCats : null, rangeLabel: range.label,
+    })
+    setShowBill(false)
+    if (!res.count) Alert.alert('Nothing to export', 'No expenses match that range and those categories.')
+  })
+
+  const wipe = () =>
+    Alert.alert('Delete all data?', 'Every transaction, account, card, rule and subscription on this device will be erased.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Continue', style: 'destructive', onPress: () =>
+          Alert.alert('Are you absolutely sure?', 'This cannot be undone. Export your data first if you may need it.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete everything', style: 'destructive', onPress: () => run('Deleting', async () => { await wipeAllData(); await resetSettings(); await restartOnboarding() }) },
+          ]),
+      },
+    ])
+
+  const subscription = access.status === 'subscribed' ? 'Subscribed'
+    : access.status === 'trial' ? `Free trial (${access.trialDaysLeft} day${access.trialDaysLeft === 1 ? '' : 's'} left)`
+    : 'Trial ended'
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Privacy & Controls</Text>
-      
-      <View style={[GLASS_STYLES.card, styles.card]}>
-        <Text style={styles.rowText}>Google Play Status: Active Trial (29 Days left)</Text>
-      </View>
-      
-      <TouchableOpacity style={[GLASS_STYLES.card, styles.actionRow]} onPress={handleExport}>
-        <Text style={styles.actionText}>Export Data to CSV</Text>
-      </TouchableOpacity>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+        <Text style={styles.header}>Privacy & controls</Text>
 
-      <TouchableOpacity style={[GLASS_STYLES.card, styles.actionRow]} onPress={handleExportPDF}>
-        <Text style={styles.actionText}>Export Group Bill (PDF)</Text>
-      </TouchableOpacity>
+        <View style={[GLASS_STYLES.card, styles.card]}>
+          <Text style={styles.rowText}>Plan: {subscription}</Text>
+          <Text style={styles.hint}>SMS access: {smsOk ? 'allowed' : 'not allowed'}{!smsOk ? '  (tap Sync to grant)' : ''}</Text>
+          <Text style={styles.hint}>Last daily audit: {settings && settings.lastAuditAt ? formatDateTime(settings.lastAuditAt) : 'never'}</Text>
+          <Text style={styles.hint}>History starts: {settings && settings.onboardingStartDate ? formatDate(settings.onboardingStartDate) : 'not set'}</Text>
+        </View>
+
+        {busy ? <View style={styles.busy}><ActivityIndicator color={COLORS.emerald} /><Text style={styles.hint}>  {busy}…</Text></View> : null}
+
+        <Text style={styles.section}>Data</Text>
+        <Action title="Sync SMS now" onPress={resync} />
+        <Action title="Change history start date" onPress={() => setShowRange(true)} />
+        <Action title="Manage merchant rules" onPress={() => setShowRules(true)} />
+
+        <Text style={styles.section}>Export</Text>
+        <Action title="Export data to CSV" onPress={() => run('Exporting', exportTransactionsToCSV)} />
+        <Action title="Export data to JSON" onPress={() => run('Exporting', exportTransactionsToJSON)} />
+        <Action title="Export group bill (PDF)" onPress={() => setShowBill(true)} />
+
+        <Text style={styles.section}>Danger zone</Text>
+        <Action title="Delete all data" danger onPress={wipe} />
+      </ScrollView>
+
+      <Sheet visible={showRange} onClose={() => setShowRange(false)} title="Import how far back?">
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {RANGES.map(([d, l]) => <Chip key={d} label={l} onPress={() => changeStart(d)} />)}
+        </View>
+        <Text style={styles.hint}>Messages already imported are never duplicated.</Text>
+      </Sheet>
+
+      <Sheet visible={showBill} onClose={() => setShowBill(false)} title="Group bill (PDF)">
+        <Text style={styles.hint}>Period</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginVertical: 8 }}>
+          {[['MONTH', 'This month'], ['30D', 'Last 30 days'], ['ALL', 'All time']].map(([k, l]) => (
+            <Chip key={k} label={l} selected={billRange === k} onPress={() => setBillRange(k)} color={COLORS.blue} />
+          ))}
+        </View>
+        <Text style={styles.hint}>Categories (none selected = all)</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginVertical: 8 }}>
+          {[...CATEGORY_NAMES, 'Uncategorized'].map(c => (
+            <Chip key={c} label={c} selected={billCats.includes(c)} onPress={() => setBillCats(billCats.includes(c) ? billCats.filter(x => x !== c) : [...billCats, c])} />
+          ))}
+        </View>
+        <Button title="Create PDF" onPress={exportBill} />
+      </Sheet>
+
+      {showRules ? <MerchantRules onClose={() => setShowRules(false)} /> : null}
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    padding: 16,
-  },
-  header: {
-    color: COLORS.textPrimary,
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 24,
-    marginTop: 40,
-  },
-  card: {
-    marginBottom: 16,
-  },
-  rowText: {
-    color: COLORS.textPrimary,
-  },
-  actionRow: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  actionText: {
-    color: COLORS.emerald,
-    fontWeight: 'bold',
-  }
+  container: { flex: 1, backgroundColor: COLORS.background, padding: 16 },
+  header: { color: COLORS.textPrimary, fontSize: 24, fontWeight: 'bold', marginBottom: 24, marginTop: 40 },
+  section: { color: COLORS.textSecondary, fontSize: 13, marginTop: 16, marginBottom: 8, textTransform: 'uppercase' },
+  card: { marginBottom: 8 },
+  rowText: { color: COLORS.textPrimary, marginBottom: 6 },
+  hint: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  action: { marginBottom: 8 },
+  busy: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
 })

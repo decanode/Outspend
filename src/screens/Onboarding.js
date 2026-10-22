@@ -1,99 +1,106 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { COLORS, GLASS_STYLES } from '../theme/designSystem';
+import React, { useState } from 'react'
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native'
+import { COLORS, GLASS_STYLES } from '../theme/designSystem'
+import { Button, Chip } from '../components/ui'
+import { requestSmsPermission, openAppSettings } from '../services/Permissions'
+import { initNotifications } from '../services/NotificationService'
+import { updateSettings, DEFAULT_IMPORT_DAYS } from '../services/Settings'
+import { importHistory } from '../services/SmsIngest'
+import { ensureTrialStarted } from '../services/BillingService'
 
+const RANGES = [[30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year']]
+
+// Gmail receipt sync is deferred, so onboarding has three steps for now.
 export default function Onboarding({ onComplete }) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(1)
+  const [smsStatus, setSmsStatus] = useState(null) // granted | denied | blocked
+  const [days, setDays] = useState(DEFAULT_IMPORT_DAYS)
+  const [importing, setImporting] = useState(false)
+  const [progress, setProgress] = useState(null)
 
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
-          <>
-            <Text style={styles.title}>100% Private.</Text>
-            <Text style={styles.subtitle}>Outspend never sends your data to any servers. All processing happens right here on your phone.</Text>
-          </>
-        );
-      case 2:
-        return (
-          <>
-            <Text style={styles.title}>Read SMS</Text>
-            <Text style={styles.subtitle}>We need SMS permissions to automatically log your expenses from bank alerts. This data never leaves your device.</Text>
-          </>
-        );
-      case 3:
-        return (
-          <>
-            <Text style={styles.title}>Gmail Sync</Text>
-            <Text style={styles.subtitle}>Securely log in to Gmail to automatically track e-receipts from merchants like Swiggy and Amazon.</Text>
-          </>
-        );
-      case 4:
-        return (
-          <>
-            <Text style={styles.title}>When to start?</Text>
-            <Text style={styles.subtitle}>Choose a starting date for your transaction history to limit processing.</Text>
-          </>
-        );
-      default:
-        return null;
+  const askSms = async () => {
+    const status = await requestSmsPermission()
+    setSmsStatus(status)
+    await initNotifications().catch(() => {}) // best effort; reminders are optional
+    if (status === 'granted') setStep(3)
+  }
+
+  const finish = async () => {
+    setImporting(true)
+    const startDate = Date.now() - days * 86400000
+    await updateSettings({ onboardingStartDate: startDate, isOnboarded: true })
+    await ensureTrialStarted()
+    try {
+      await importHistory({ onProgress: setProgress })
+    } catch (e) {
+      console.error('History import failed', e) // user can re-run from Settings
     }
-  };
+    onComplete()
+  }
 
-  const nextStep = () => {
-    if (step < 4) setStep(step + 1);
-    else onComplete();
-  };
+  if (importing) {
+    return (
+      <View style={styles.container}>
+        <View style={[GLASS_STYLES.card, styles.card]}>
+          <ActivityIndicator size="large" color={COLORS.emerald} style={{ marginBottom: 16 }} />
+          <Text style={styles.title}>Reading your bank messages…</Text>
+          <Text style={styles.subtitle}>
+            {progress ? `${progress.created} transactions found from ${progress.scanned} messages` : 'This only takes a moment.'}
+          </Text>
+        </View>
+      </View>
+    )
+  }
 
   return (
     <View style={styles.container}>
       <View style={[GLASS_STYLES.card, styles.card]}>
-        {renderStep()}
-        <TouchableOpacity style={styles.button} onPress={nextStep}>
-          <Text style={styles.buttonText}>{step === 4 ? "Let's Go" : "Next"}</Text>
-        </TouchableOpacity>
+        {step === 1 && (
+          <>
+            <Text style={styles.title}>100% private.</Text>
+            <Text style={styles.subtitle}>Outspend never sends your data to any server. All processing happens right here on your phone.</Text>
+            <Button title="Next" onPress={() => setStep(2)} style={styles.full} />
+          </>
+        )}
+        {step === 2 && (
+          <>
+            <Text style={styles.title}>Read SMS</Text>
+            <Text style={styles.subtitle}>
+              Outspend reads bank and UPI alerts to log your expenses automatically. Personal conversations are ignored, and nothing leaves your device.
+            </Text>
+            {smsStatus && smsStatus !== 'granted' ? (
+              <Text style={styles.warn}>
+                {smsStatus === 'blocked'
+                  ? 'SMS access is blocked. Enable it in app settings to log expenses automatically.'
+                  : 'Without SMS access, you will need to add expenses by hand.'}
+              </Text>
+            ) : null}
+            <Button title="Allow SMS access" onPress={askSms} style={styles.full} />
+            {smsStatus === 'blocked' ? <Button title="Open app settings" variant="ghost" onPress={openAppSettings} style={styles.full} /> : null}
+            <Button title="Skip for now" variant="ghost" onPress={() => setStep(3)} style={styles.full} />
+          </>
+        )}
+        {step === 3 && (
+          <>
+            <Text style={styles.title}>When to start?</Text>
+            <Text style={styles.subtitle}>Choose how far back to read your transaction history. You can change this later in Settings.</Text>
+            <View style={styles.chips}>
+              {RANGES.map(([d, label]) => <Chip key={d} label={label} selected={days === d} onPress={() => setDays(d)} />)}
+            </View>
+            <Button title="Let's go" onPress={finish} style={styles.full} />
+          </>
+        )}
       </View>
     </View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  card: {
-    padding: 32,
-    alignItems: 'center',
-    width: '100%',
-  },
-  title: {
-    color: COLORS.emerald,
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: COLORS.textPrimary,
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 22,
-  },
-  button: {
-    backgroundColor: COLORS.emerald,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-  }
-});
+  container: { flex: 1, backgroundColor: COLORS.background, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  card: { padding: 32, alignItems: 'center', width: '100%' },
+  title: { color: COLORS.emerald, fontSize: 24, fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
+  subtitle: { color: COLORS.textPrimary, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  warn: { color: COLORS.amber, textAlign: 'center', marginBottom: 16, fontSize: 13 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 16 },
+  full: { width: '100%', marginBottom: 8 },
+})
