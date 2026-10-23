@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **Implementation pass 1 complete (see sections 8-10); awaiting your decisions and device testing.** Earlier: reviewed and validated by Claude against `docs/Expense Tracker Design Document_2.pdf` and `docs/UI design.html` (2026-10-22).** Corrections applied inline, marked `[ADDED]` / `[VALIDATED]` / `[RESOLVED]`. All of section 2 is now answered — the 3 items that needed user input (Gmail scope, IAP product status, OAuth client status) were asked and answered in chat: **Gmail deferred, Play Console product not yet created, Google Cloud OAuth client not yet set up.** This pass only edited this plan file — no implementation work has started. No work starts until the user posts approval in section 7.
+Status: **Most current status is section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -92,6 +92,7 @@ Do you have a spec or feature list I should follow? If not, is the scope in sect
 ### Q3. Platform scope
 Is this Android-only? Reading SMS is not possible on iOS. If Android-only: drop iOS config, `supportsTablet`, and iOS-specific code paths.
 - **Answer (Claude):** Android-only, confirmed directly from the design doc (it only ever specifies Native Android Telephony / SMS BroadcastReceiver) — and iOS cannot grant third-party apps SMS read access at all, which is an OS sandboxing restriction, not a judgment call. Dropping the `ios` key and `supportsTablet` from `app.json` is folded into P2-13 (Release readiness), not done yet.
+- **Superseded 2026-10-23 (see section 14):** the user decided to add a real iOS release after all, using a Share-Sheet Shortcut as the iOS capture mechanism (since no automatic SMS access exists on iOS, confirmed unchanged). Android stays the primary, full-capability platform; iOS is a second platform with manual-share capture instead of automatic. See section 14.3 for the design.
 
 ### Q4. Billing
 - Enforce the paywall now, or keep it off until the end? (Recommendation: build it behind a flag and enable at the end.)
@@ -289,7 +290,7 @@ Estimates are rough effort: S (<1 h), M (1 to 3 h), L (3+ h).
 
 ---
 
-### PHASE 5: Gmail receipts (DEFERRED — confirmed by you; moves to after Phase 6, not dropped. No Google Cloud OAuth client exists yet, see Q5.)
+### PHASE 5: Gmail receipts (DEFERRED — confirmed by you; moves to after Phase 6, not dropped. No Google Cloud OAuth client exists yet, see Q5. **Update 2026-10-23: explicitly dropped from the Round 4 public-release push — see section 14.5** — not deleted, just not part of the release currently being planned.)
 
 #### P2-1 Gmail pipeline (L)
 - Configure sign-in with real client IDs at app start; add sign-in state and silent sign-in; handle token refresh and revoked access.
@@ -636,3 +637,120 @@ Request: *"Do not be generic to one currency. I may extend this logic to differe
 2. Try the first-run country step on a phone set to another region (or pick another country) and check currency symbols, dates, number grouping, and the voice prompt language.
 3. Send a few real bank messages from your own non-India bank to a test device, and report any that are missed or misread (redact numbers) so the profile can be improved.
 4. In Play Console, set the subscription price for each country you launch in.
+
+---
+
+## 14. Round 4: SMS reliability fixes, iOS capture, dual-store release (requested 2026-10-23)
+
+**Trigger:** you tested the SMS flow and found missed transactions — a salary credit and some credit card payments — causing wrong totals. Your first instinct was "add Gmail sync as a backup." Before acting on that, I read the current `RegexEngine.js`/`profiles.js`/`SmsIngest.js` code directly (not from memory) and found concrete bugs that are the much more likely cause. Gmail would not actually have caught these specific misses anyway — salary credits and card payments are bank-initiated SMS, not vendor e-receipt emails, and Gmail sync as scoped (§3 Phase 5) only ever watched Swiggy/Zomato/Amazon/Uber/IRCTC order emails. You then confirmed two decisions that reshape this release: **drop Gmail entirely from this release**, and add a **real iOS release** using your own proposed mechanism — an iOS Shortcut, triggered from the share sheet, since no automatic/background SMS trigger exists on iOS at all (confirmed by research this session, not assumed from training data).
+
+This section is **planning only** — no application code has been written yet. It follows the same shape as sections 11-13: a task table now, a status table once work actually starts.
+
+### 14.1 Decision log
+
+| Decision | Resolution |
+|---|---|
+| Gmail (Phase 5) | **Dropped from this release.** Not deleted — section 3 Phase 5 is untouched for a possible future release. See 14.5. |
+| Platform scope (supersedes Q3, section 2) | **Android + iOS.** Android stays the full-capability platform (automatic SMS capture). iOS gets manual Share-Sheet-Shortcut capture — the only mechanism that actually exists on iOS, confirmed below. |
+| Root cause of missed SMS | Parser bugs in the existing code (14.2), not a missing data source. Fixed directly rather than routed around with Gmail. |
+
+### 14.2 Phase R4-A — SMS parser reliability fixes (Android, do first)
+
+Exact current bugs found by direct code read (`feat/implementation` branch, 2026-10-23):
+
+| ID | Bug | File | Fix |
+|---|---|---|---|
+| R4-A1 | `IN.senderPattern = /^[A-Za-z]{2}-[A-Za-z0-9&]{3,9}(-[A-Za-z])?$/` has no fallback for bare-alphanumeric or numeric-shortcode senders, unlike `GLOBAL`'s `...\|^\d{3,6}$`. A payroll-gateway or card-network sender that doesn't match the strict `XX-ENTITY` dashed form is invisible on every path (live, import, daily resync) — never self-heals. **Most likely cause of the missed salary/card SMS.** | `src/regions/profiles.js:18` | Add a bare-alphanumeric and numeric-shortcode fallback to the `IN` profile, mirroring `GLOBAL`. Exact pattern to be finalised against your real sender IDs (see "Needed from you" below) — do not guess a fix from hypothetical formats alone. |
+| R4-A2 | Type classification is "whichever debit/credit keyword appears first in the body wins" (`RegexEngine.js:149-161`), with `'transferred'`/`'trf'` in the **debit** list. A salary/NEFT credit phrased "...amount **transferred** to your account towards salary..." with no earlier credit-word is misclassified `DEBIT` — row exists, but counts the wrong way. **Matches your "math is off" symptom even when nothing was dropped.** | `src/services/RegexEngine.js:11-15, 149-161` | Direction-aware classification: don't let `'transferred'`/`'trf'` alone force DEBIT when the message also carries salary/NEFT/IMPS-credit context; prefer proximity-to-amount over "first match in the whole body." |
+| R4-A3 | `REJECT_PATTERNS` includes `is due`/`due on`/`autopay.*scheduled` (`RegexEngine.js:17-24`), tuned for payment *reminders* — but a card auto-pay **success** confirmation that echoes the due date in passing trips the same pattern and is wholesale-rejected. | `src/services/RegexEngine.js:17-24` | Narrow the reject patterns so a completed-payment confirmation isn't caught by reminder boilerplate. |
+| R4-A4 | **Zero diagnostic surface anywhere.** `IngestPlanner.js` tracks a `skipped` count but never records which message or why; `Settings.js`'s "Sync Now" alert doesn't even display that count. No way, even for a developer, to find out after the fact why a specific real SMS didn't become a transaction, short of a live `adb logcat` capture. | `src/services/IngestPlanner.js`, `src/screens/Settings.js` | Add a lightweight rejected/ambiguous-message log (sender + timestamp + truncated body + reason), surfaced as a new "Review Skipped Messages" row in Settings. Closes this gap for good — the next time something's missed, it's visible instead of invisible. |
+| R4-A5 (minor) | `SmsReceiver.kt:36-39` catches a background-start `IllegalStateException` and discards it with zero logging, relying entirely on resync to recover. | `android/app/src/main/java/com/decanode/outspend/SmsReceiver.kt` | Low priority — resync already covers this in practice. Revisit only if R4-A4's new log shows it happening often. |
+
+**Needed from you before R4-A1/A2/A3 are written:** 2-3 real examples of the missed messages — the exact sender ID and message text (redact the amount/account digits if you'd rather) for the salary credit and the credit card payment(s). The fixes above are plausible from reading the code, but tuning a bank-SMS regex from guessed formats instead of your actual bank's real text is exactly the mistake that got us here — R2/R3's own notes (D20, section 13) already flag this as the right practice, not a new standard.
+
+**Verification:** new fixtures from your real samples added to `__tests__/RegexEngine.test.js`; on-device resync confirms the previously-missed transactions now appear with the correct amount and direction; "Review Skipped Messages" shows a real reason for anything still rejected.
+
+### 14.3 Phase R4-B — iOS platform enablement + Shortcut capture
+
+**Confirmed this session (web research, not assumed):** no API exists for a third-party iOS app to read general SMS content, with or without special entitlements. Shortcuts "personal automations" have no trigger for "message received" at all — the only two real mechanisms are (a) manually select a message → Share Sheet → a custom Shortcut (your proposal — this is the standard pattern other finance apps use), or (b) Apple's `IdentityLookup` Message Filter extension, which can see unknown-sender text for spam/transaction *classification* but is the wrong tool for general data extraction and carries real App Store review risk if repurposed — not used here, noted in 14.5 as a possible future exploration only.
+
+| ID | Task | Notes |
+|---|---|---|
+| R4-B1 | Enable iOS in `app.json` (`platforms`, `ios.bundleIdentifier`) and add a custom `scheme` (e.g. `"outspend"`) | No native Swift code needed for this part — Expo's config handles URL-scheme registration. |
+| R4-B2 | Add `ios` key to each profile in `eas.json` | Needed before any iOS EAS build. |
+| R4-B3 | URL handler: `Linking` listener parsing `outspend://capture?text=<url-encoded SMS text>`, routing into the same parse/ingest path `SmsIngest.js` already uses for Android | Reuses `RegexEngine.js` as-is — it's already pure JS, platform-agnostic. No duplicate parsing logic. |
+| R4-B4 | Document the exact Shortcut recipe: *Get Shortcut Input* → *URL-Encode* → *Open URL* `outspend://capture?text=[encoded]` | This is a spec I write; the Shortcut itself has to be built by a human in the iOS Shortcuts app (see "Needed from you"). |
+| R4-B5 | New iOS-only onboarding step: explains the share-sheet workflow, with a "Set Up Capture Shortcut" button that deep-links to the Shortcut's iCloud install link | `src/screens/Onboarding.js` |
+| R4-B6 | In-app help screen ("How to share a bank text"), reachable from Settings too | New small screen, reuses existing design system components |
+
+**Needed from you (needs a physical iPhone and your own Apple ID — I cannot do these):**
+1. **Apple Developer Program enrollment** ($99/year) — required before any iOS build, signing, TestFlight, or App Store submission.
+2. **Build the actual Shortcut** in the iOS Shortcuts app following the recipe in R4-B4, then share it via iCloud link (Shortcuts app → Share → Copy iCloud Link). Send me the link and I wire it into onboarding (R4-B5).
+3. **`eas credentials` setup for iOS**, tied to your Apple Developer account, for signing.
+
+**Verification:** `eas build --profile development --platform ios`, install via TestFlight, manually share a sample bank SMS text through the Shortcut, confirm a transaction is created with the correct amount/merchant/direction.
+
+### 14.4 Phase R4-C — Dual-store release readiness
+
+**Play Store (Android)** — already known from section 10.C, restated for completeness: create the `com.decanode.outspend.premium_monthly` subscription, SMS Permissions Declaration Form, Data Safety form, privacy policy URL, Play App Signing enrollment.
+
+**App Store (iOS)** — new:
+
+| ID | Task |
+|---|---|
+| R4-C1 | App Store Connect: create the app record, matching bundle ID |
+| R4-C2 | Privacy "nutrition label": must disclose that the app processes message content, even though it's local-only / never transmitted — Apple's label covers processing, not just network transmission |
+| R4-C3 | TestFlight internal testing before public submission |
+| R4-C4 | **Review-risk budget:** a finance app that ingests message text via a user-run Shortcut is an unusual pattern for App Review. Budget for a possible rejection/clarification round-trip. The in-app help screen (R4-B6) doubles as review-justification material — it demonstrates the mechanism is transparent and user-initiated, not covert message interception. |
+
+### 14.5 Explicitly out of scope for this round
+
+- **Gmail** (section 3, Phase 5) — unchanged, deferred, not touched by this round. Resume per section 10.E whenever you're ready.
+- **`IdentityLookup` Message Filter extension** — a possible future automatic-capture improvement for iOS (Apple's own WWDC22 material explicitly mentions "transaction" as an example filter category), but scoped for spam filtering, not general data extraction, and untested App Store review territory. Not attempted now.
+
+### 14.6 Suggested order
+
+R4-A (SMS fixes — fastest, directly fixes your reported bug, no new accounts needed) → R4-B (iOS enablement + Shortcut — needs your Apple Developer enrollment in parallel) → R4-C (store readiness — largely your account/config work, runs alongside R4-B's device testing).
+
+**Waiting on from you to start R4-A:** the 2-3 real (sanitized if you prefer) SMS samples described in 14.2.
+**Waiting on from you to start R4-B:** confirmation you're enrolling in the Apple Developer Program (or already have), so I know when to start the iOS-side code.
+
+---
+
+## 15. Round 5: Bug fixes and pay-cycle-aware analytics (requested 2026-10-23/24)
+
+**Status: decisions recorded below, confirmed by you — no code written yet.** This section is the deliverable of a design discussion only; implementation starts on your next go-ahead.
+
+Apple Developer account: confirmed by you, held — iOS work (R4-B) stays paused until you separately confirm start.
+
+### 15.1 Bug list and resolutions
+
+| ID | Bug (as reported) | Root cause (verified against current code) | Fix |
+|---|---|---|---|
+| R5-1 | "Allow merchant and transaction name" — e.g. Amazon purchase needs an item name, not just the merchant | Not missing — `notes` already exists on `Transaction` and is already searched in `Ledger.js:101` — it's just mislabeled ("Notes") and never shown outside the detail sheet (`TransactionDetail.js:67`), so it's invisible in the list | Relabel to something like "Item / what you bought" in `TransactionForm.js` and `TransactionDetail.js`; surface it in the Ledger row (`Ledger.js:58`) and Dashboard's recent list, not just on tap. No schema change. |
+| R5-2 | Category filter chips in Ledger show blank/unreadable | Confirmed: `Chip` (`src/components/ui.js:18-25`) has no `backgroundColor` when unselected, so the already-muted `textSecondary` (`#a3b18a`) sits directly on the raw dark screen background with no backdrop — everywhere else that color is used, it's inside a translucent card. Not a logic bug — `Ledger.js:162-167` already renders every category unconditionally. | Give unselected chips a subtle background fill, consistent with the rest of the UI. |
+| R5-3 | Ledger filters "quite confusing" | Four unlabeled horizontal scroll-chip strips stacked on top of each other (quick toggles / type+period / categories / tags), no grouping, no labels | **Decided (this session): replace with simple individual dropdown/picker controls per filter dimension** (Type, Period, Category, Account, Tag) — not one bundled "Filters" sheet (that approach was proposed and explicitly rejected). Each dropdown opens its own simple picker. |
+| R5-4 | Multiple savings accounts, transactions in both — "find a way to track it based on accounts" | Backend already does this: `IngestPlanner.js:43-44,91-92` already auto-matches an incoming SMS to the right account/card by last-4 digits and sets `account_id`/`card_id`. The gap is purely UI — `Ledger.js` has no account filter at all | Add an **Account** dropdown (one of the R5-3 dropdowns). Tapping an account in the Accounts tab deep-links into Ledger pre-filtered to it. |
+| R5-5 | Credit card "credited" message wrongly counted as income | Confirmed bug: `incomeTotal()` (`src/services/Analytics.js:81-84`) counts any `type === 'CREDIT'`, with no check for `card_id` — a credit posted to a card (refund, adjustment, etc. not caught by the transfer/refund detectors) can slip through as personal income | Exclude any `CREDIT` transaction that has a `card_id` set from `incomeTotal` — a credit posted to a card is never personal income. |
+| R5-6 | "Allow calendar select for dates" | Confirmed: `TransactionForm.js:80` is a raw `YYYY-MM-DD` text field, no picker | Add a native date picker (`@react-native-community/datetimepicker` via `expo install`), replacing the text field. |
+| R5-7 | "Manual income entry not updated in analytics" | **Investigated and resolved as not a bug.** Confirmed from your own screenshots: the manual entry ("VW salary," +₹2,01,000) is dated **30 Sept 2026** (Ledger section header), but Analytics was showing the **October 2026** period. Calendar-month filtering is working correctly — the entry is just in a different month than the one being viewed. This surfaced the real underlying issue below (R5-8). | No fix needed as a bug. Superseded by R5-8, which addresses the actual problem this symptom was pointing at. |
+
+### 15.2 R5-8 — Pay-cycle-anchored analytics periods (Option B, confirmed)
+
+**Problem underneath R5-7:** your salary is credited near month-end (sometimes a day or two earlier than the 30th/31st, when that date falls on a weekend) and is spent during the *following* calendar month. Strict calendar-month buckets split "when income arrived" from "when it's used," producing distorted figures (the Oct 2026 screenshot showed a -821% savings rate because the salary landed in September's bucket while October carried a full month of spending against it).
+
+**Decision: Option B — pure merchant-based detection, no fixed day setting**, because the salary amount varies month to month but the creditor name is constant. Rejected a fixed "cycle start day" (Option A) since a fixed day can't track a payday that itself shifts around weekends.
+
+Design, grounded in the existing `detectSalary` function (`src/services/Planning.js:18-49`), which already groups recurring credits by normalized merchant name and currently drives the Home screen's "Payday in X days" countdown:
+
+1. **Cycle boundary = the actual salary transaction, not a predicted date.** Reuse the same merchant-matching logic, but instead of only predicting the *next* payday, use each *actual* occurrence's real date as that cycle's start — absorbing weekend-shift variation automatically, since the boundary is wherever the real transaction landed.
+2. **Match by merchant only once confirmed, regardless of amount drift.** The existing 20% amount-tolerance band (`Planning.js:38`) stays for *initial* pattern recognition, but once a salary source is confirmed, any credit from that same merchant counts as the next cycle anchor — full stop, no amount check — since the amount is expected to vary.
+3. **One-time user confirmation**, not silent: the first time a likely salary pattern is detected, ask once ("Is `[merchant]` your salary? Yes/No") — same UX pattern already used for merchant rules — before it starts controlling cycle boundaries. Prevents an unrelated recurring large credit from hijacking the anchor.
+4. **1st-of-month safety-net notification:** a scheduled check — if no confirmed-salary credit has landed yet for the current cycle by the 1st, notify: "Has your salary arrived? We haven't seen it yet." Options: dismiss (just running late), or add it manually (opens the entry form pre-filled with type = Income and the confirmed salary merchant name).
+5. Applies to Analytics *and* Plan/Budgets month boundaries, not just the one screen, since both currently use the same calendar-month logic.
+
+### 15.3 Suggested order
+
+R5-2 (chip contrast, trivial, no logic risk) → R5-1, R5-5, R5-6 (independent, low-risk, no device rebuild needed — pure JS except the date-picker native module) → R5-3 + R5-4 together (filter UI rework, since the account filter is one of the new dropdowns) → R5-8 (pay-cycle detection, the largest item, touches Analytics/Plan/Settings/Notifications).
+
+**Not yet started — awaiting your go-ahead to begin coding.**
