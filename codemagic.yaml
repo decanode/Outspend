@@ -1,0 +1,50 @@
+# Codemagic workflow: builds the iPhone app and sends it to TestFlight.
+# Not run yet. It needs the one-time setup described in NEW_IMP_PLAN.MD section 18.
+workflows:
+  ios-testflight:
+    name: iOS to TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: Outspend # must match the name you give the App Store Connect key in Codemagic
+    environment:
+      node: 22
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.decanode.outspend
+      vars:
+        # Numeric "Apple ID" of the app: App Store Connect > your app > App Information > General Information.
+        APP_STORE_APPLE_ID: "6816864935"
+    scripts:
+      - name: Install dependencies
+        script: npm ci --legacy-peer-deps
+      - name: Run tests
+        script: npm test
+      - name: Generate the native iOS project
+        # ios/ is not committed: app.json is the source of truth (permissions, URL scheme, pods).
+        script: npx expo prebuild --platform ios --no-install
+      - name: Install CocoaPods
+        script: cd ios && pod install
+      - name: Apply code signing
+        script: xcode-project use-profiles
+      - name: Set the build number
+        # Each TestFlight upload needs a higher build number than the last one.
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          NEXT=$(( ${LATEST:-0} + 1 ))
+          echo "Build number: $NEXT"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT" ios/Outspend/Info.plist
+      - name: Build the IPA
+        script: |
+          xcode-project build-ipa \
+            --workspace "$CM_BUILD_DIR/ios/Outspend.xcworkspace" \
+            --scheme Outspend
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

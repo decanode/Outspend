@@ -5,21 +5,70 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
-    },
+    "userInterfaceStyle": "dark",
+    "platforms": [
+      "android",
+      "ios"
+    ],
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0d1b2a",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.decanode.outspend"
+      "package": "com.decanode.outspend",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.READ_SMS",
+        "android.permission.RECEIVE_SMS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "com.android.vending.BILLING"
+      ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
+    "plugins": [
+      "expo-background-task",
+      "expo-notifications",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Outspend uses the microphone so you can log expenses by voice.",
+          "speechRecognitionPermission": "Outspend uses speech recognition to turn what you say into an expense."
+        }
+      ],
+      "expo-font",
+      "expo-sharing",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "simdjson",
+                "path": "../node_modules/@nozbe/simdjson",
+                "modular_headers": true
+              }
+            ]
+          }
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Outspend uses Face ID to unlock the app."
+        }
+      ]
+    ],
+    "scheme": "outspend",
+    "ios": {
+      "bundleIdentifier": "com.decanode.outspend",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Outspend uses the camera so you can photograph receipts. Photos stay on your phone."
+      }
     }
   }
 }

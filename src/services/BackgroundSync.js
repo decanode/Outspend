@@ -1,34 +1,31 @@
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
-import { database } from '../db';
-import { syncGmailReceipts } from './GoogleAuth';
+import * as BackgroundTask from 'expo-background-task'
+import * as TaskManager from 'expo-task-manager'
+import { syncInbox } from './SmsIngest'
+import { refreshReminders } from './NotificationService'
 
-const BACKGROUND_SYNC_TASK = 'BACKGROUND_SYNC_TASK';
+export const BACKGROUND_SYNC_TASK = 'BACKGROUND_SYNC_TASK'
 
+// Must be defined at module scope so the OS can run it with the app closed.
 TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
   try {
-    console.log("Running Daily Audit Background Task...");
-    
-    // We can fetch SMS here natively or query Gmail
-    await syncGmailReceipts();
-
-    // Log the audit time (could be saved to AsyncStorage or DB)
-    return BackgroundFetch.BackgroundFetchResult.NewData;
+    await syncInbox()
+    await refreshReminders()
+    return BackgroundTask.BackgroundTaskResult.Success
   } catch (err) {
-    console.error("Background sync failed", err);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
+    console.error('Background sync failed', err)
+    return BackgroundTask.BackgroundTaskResult.Failed
   }
-});
+})
 
 export const registerBackgroundSync = async () => {
   try {
-    await BackgroundFetch.registerTaskAsync(BACKGROUND_SYNC_TASK, {
-      minimumInterval: 60 * 60 * 24, // 24 hours
-      stopOnTerminate: false, // Android only
-      startOnBoot: true, // Android only
-    });
-    console.log("Background sync task registered.");
+    const status = await BackgroundTask.getStatusAsync()
+    if (status !== BackgroundTask.BackgroundTaskStatus.Available) return
+    if (await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK)) return
+    await BackgroundTask.registerTaskAsync(BACKGROUND_SYNC_TASK, {
+      minimumInterval: 24 * 60, // minutes: daily audit
+    })
   } catch (err) {
-    console.error("Failed to register background task", err);
+    console.error('Failed to register background task', err)
   }
-};
+}

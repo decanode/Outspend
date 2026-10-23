@@ -7,4 +7,6 @@ export default class CreditCard extends Model {
   @field('name') name
   @field('limit') limit
   @field('current_spend') current_spend
+  @field('last4') last4
+  @field('billing_day') billing_day
 }

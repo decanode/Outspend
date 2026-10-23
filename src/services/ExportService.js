@@ -1,26 +1,57 @@
-import RNFS from 'react-native-fs';
-import { database } from '../db';
-import { Q } from '@nozbe/watermelondb';
+import RNFS from 'react-native-fs'
+import * as Print from 'expo-print'
+import { shareAsync } from 'expo-sharing'
+import { fetchLiveTransactions } from '../data/transactions'
+import { col } from '../data/util'
+import { toCsv, toJson, buildBillHtml, buildReportHtml } from './ExportFormat'
+import { analyzePeriod, periodLabel } from './Insights'
+
+const accountNames = async () => {
+  const [accounts, cards] = await Promise.all([col('accounts').query().fetch(), col('credit_cards').query().fetch()])
+  const names = {}
+  accounts.forEach(a => { names[a.id] = a.name })
+  cards.forEach(c => { names[c.id] = c.name })
+  return names
+}
+
+const sortedTransactions = async () => (await fetchLiveTransactions()).sort((a, b) => b.timestamp - a.timestamp)
+
+// Files go to the app cache and out through the system share sheet: this works on
+// every Android version (scoped storage blocks writing straight to Downloads).
+const shareText = async (filename, content, mimeType) => {
+  const path = `${RNFS.CachesDirectoryPath}/${filename}`
+  await RNFS.writeFile(path, content, 'utf8')
+  await shareAsync(`file://${path}`, { mimeType, dialogTitle: `Export ${filename}` })
+  return path
+}
 
 export const exportTransactionsToCSV = async () => {
-  try {
-    const transactions = await database.collections.get('transactions').query().fetch();
-    
-    let csvString = "Date,Merchant,Amount,Type,Source,Category\n";
-    
-    transactions.forEach(tx => {
-      const date = new Date(tx.timestamp).toISOString();
-      const merchant = tx.merchant ? tx.merchant.replace(/,/g, '') : '';
-      const category = tx.category ? tx.category.replace(/,/g, '') : '';
-      csvString += `${date},${merchant},${tx.amount},${tx.type},${tx.source},${category}\n`;
-    });
+  const [txs, names] = await Promise.all([sortedTransactions(), accountNames()])
+  return shareText('Outspend_Export.csv', toCsv(txs, names), 'text/csv')
+}
 
-    const path = `${RNFS.DownloadDirectoryPath}/Outspend_Export.csv`;
-    await RNFS.writeFile(path, csvString, 'utf8');
-    console.log('Export saved to', path);
-    return path;
-  } catch (error) {
-    console.error("Export Error", error);
-    throw error;
-  }
+export const exportTransactionsToJSON = async () => {
+  const [txs, names] = await Promise.all([sortedTransactions(), accountNames()])
+  return shareText('Outspend_Export.json', toJson(txs, names), 'application/json')
+}
+
+/** @param {{ start: number, end: number, categories: string[]|null, rangeLabel: string }} opts */
+export const exportGroupBillPdf = async ({ start, end, categories, rangeLabel }) => {
+  const all = await sortedTransactions()
+  const txs = all.filter(t =>
+    t.type === 'DEBIT' &&
+    t.timestamp >= start && t.timestamp < end &&
+    (!categories || categories.includes(t.category || 'Uncategorized'))
+  )
+  if (!txs.length) return { count: 0 }
+  const { uri } = await Print.printToFileAsync({ html: buildBillHtml(txs, { rangeLabel }) })
+  await shareAsync(uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf', dialogTitle: 'Share bill' })
+  return { count: txs.length }
+}
+
+/** Report card PDF for a week or month, shared via the share sheet. */
+export const exportPeriodReport = async (period) => {
+  const txs = await fetchLiveTransactions()
+  const { uri } = await Print.printToFileAsync({ html: buildReportHtml(analyzePeriod(txs, period), periodLabel(period)) })
+  await shareAsync(uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf', dialogTitle: 'Share report' })
 }
