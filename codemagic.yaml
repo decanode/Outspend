@@ -28,7 +28,10 @@ workflows:
       - name: Install CocoaPods
         script: cd ios && pod install
       - name: Apply code signing
-        script: xcode-project use-profiles
+        # Scoped to the app's own project only: the unscoped command also tries (and fails) to
+        # sign unrelated .xcodeproj files bundled inside some dependencies, e.g. node_modules/
+        # @react-native-community/datetimepicker/ios/RNDateTimePicker.xcodeproj.
+        script: xcode-project use-profiles --project ios/Outspend.xcodeproj
       - name: Set the build number
         # Each TestFlight upload needs a higher build number than the last one.
         script: |
