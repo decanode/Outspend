@@ -30,8 +30,8 @@
     },
     "plugins": [
       "expo-background-task",
-      "expo-notifications",
       "./plugins/withoutPushEntitlement",
+      "expo-notifications",
       [
         "expo-speech-recognition",
         {
