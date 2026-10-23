@@ -2,6 +2,10 @@
 
 Private, offline expense tracker for Android, built to work in any country. It reads bank/UPI SMS on the device, turns them into transactions, and never sends your data anywhere.
 
+## Platforms
+- **Android:** reads bank SMS automatically, even when the app is closed.
+- **iPhone:** Apple does not allow any app to read messages, so you share a bank message to a one-tap Shortcut ("Add to Outspend") and confirm it. Everything else (analytics, budgets, goals, splits, backup, voice, receipts, app lock) works the same. See `src/screens/HowToCapture.js` for the user-facing steps.
+
 ## Countries and currencies
 One home currency per install, chosen on the first screen (guessed from the phone) and changeable in Settings. Ready-made presets: India, US, UK, UAE, Saudi Arabia, Singapore, Australia, New Zealand, Canada, Ireland, South Africa, Nigeria, Kenya, Philippines, Malaysia, Sri Lanka, Nepal, Bangladesh, Pakistan, plus "Other country" with any of 24 supported currencies. Messages in a different currency are kept (with their own symbol) but never added to your totals. India has a tuned bank-SMS profile; every other country uses a general English profile and has **not been tested against real bank messages**. See `src/regions/profiles.js` for how to add or tune a country.
 

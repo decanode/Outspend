@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native'
+import { View, Text, StyleSheet, ActivityIndicator, Platform, Linking } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { Button, Chip } from '../components/ui'
 import { requestSmsPermission, openAppSettings } from '../services/Permissions'
@@ -10,6 +10,8 @@ import { ensureTrialStarted } from '../services/BillingService'
 import { pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
 import { PassphraseSheet } from '../components/SecuritySheets'
 import RegionPicker from '../components/RegionPicker'
+import HowToCapture from './HowToCapture'
+import { SHORTCUT_URL } from '../config'
 import { applyRegionSettings, getRegion, regionById, currencySymbol } from '../regions'
 
 const RANGES = [[30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year']]
@@ -23,6 +25,7 @@ export default function Onboarding({ onComplete }) {
   const [progress, setProgress] = useState(null)
   const [restoreText, setRestoreText] = useState(null)
   const [pickRegion, setPickRegion] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [region, setRegionState] = useState(() => getRegion())
 
   const askSms = async () => {
@@ -75,7 +78,18 @@ export default function Onboarding({ onComplete }) {
               onPress={async () => { try { const t = await pickBackupFile(); if (t) setRestoreText(t) } catch { /* picker cancelled or unreadable */ } }} />
           </>
         )}
-        {step === 2 && (
+        {step === 2 && Platform.OS === 'ios' && (
+          <>
+            <Text style={styles.title}>Add bank messages</Text>
+            <Text style={styles.subtitle}>
+              iPhone does not let any app read your messages. Instead, you share a bank message to Outspend with one tap and it is added. Nothing leaves your phone.
+            </Text>
+            <Button title="Show me how" onPress={() => setShowHelp(true)} style={styles.full} />
+            {SHORTCUT_URL ? <Button title="Install the shortcut" variant="ghost" onPress={() => Linking.openURL(SHORTCUT_URL)} style={styles.full} /> : null}
+            <Button title="Next" onPress={async () => { await initNotifications().catch(() => {}); setStep(3) }} style={styles.full} />
+          </>
+        )}
+        {step === 2 && Platform.OS !== 'ios' && (
           <>
             <Text style={styles.title}>Read SMS</Text>
             <Text style={styles.subtitle}>
@@ -93,7 +107,14 @@ export default function Onboarding({ onComplete }) {
             <Button title="Skip for now" variant="ghost" onPress={() => setStep(3)} style={styles.full} />
           </>
         )}
-        {step === 3 && (
+        {step === 3 && Platform.OS === 'ios' && (
+          <>
+            <Text style={styles.title}>You are set</Text>
+            <Text style={styles.subtitle}>Share your first bank message to see it appear. You can also add expenses by hand or by voice.</Text>
+            <Button title="Let's go" onPress={finish} style={styles.full} />
+          </>
+        )}
+        {step === 3 && Platform.OS !== 'ios' && (
           <>
             <Text style={styles.title}>When to start?</Text>
             <Text style={styles.subtitle}>Choose how far back to read your transaction history. You can change this later in Settings.</Text>
@@ -104,6 +125,7 @@ export default function Onboarding({ onComplete }) {
           </>
         )}
       </View>
+      {showHelp ? <HowToCapture onClose={() => setShowHelp(false)} /> : null}
       <RegionPicker visible={pickRegion} initialRegion={region.id} initialCurrency={region.currency} onClose={() => setPickRegion(false)}
         onSave={async (id, currency) => {
           const next = applyRegionSettings({ region: id, currency, numberStyle: 'AUTO' })

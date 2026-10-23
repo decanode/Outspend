@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { View, Text, StyleSheet, Alert, ActivityIndicator } from 'react-native'
+import { View, Text, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { exportTransactionsToCSV } from '../services/ExportService'
 import { loadOffer, subscribe, restore, startPurchaseListeners } from '../services/BillingService'
@@ -34,7 +34,7 @@ export default function Paywall() {
     setBusy(true)
     try {
       const access = await restore()
-      if (!access.hasAccess || access.status !== 'subscribed') Alert.alert('Nothing to restore', 'No active subscription was found for this Google account.')
+      if (!access.hasAccess || access.status !== 'subscribed') Alert.alert('Nothing to restore', 'No active subscription was found for this store account.')
       await refreshAccess()
     } catch {
       Alert.alert('Restore failed', 'Check your connection and try again.')
@@ -59,7 +59,7 @@ export default function Paywall() {
           Your trial has ended. To keep your data strictly on your device, subscribe{offer.price ? ` for ${offer.price}` : ''}.
         </Text>
         {busy ? <ActivityIndicator color={COLORS.emerald} style={{ marginBottom: 16 }} /> : null}
-        <Button title="Subscribe via Google Play" onPress={handleSubscribe} disabled={busy} style={styles.full} />
+        <Button title={`Subscribe via ${Platform.OS === 'ios' ? 'the App Store' : 'Google Play'}`} onPress={handleSubscribe} disabled={busy} style={styles.full} />
         <Button title="Restore purchase" variant="ghost" onPress={handleRestore} disabled={busy} style={styles.full} />
         <Button title="Export data & exit" variant="ghost" onPress={handleExport} style={styles.full} />
         <Text style={styles.note}>Your data stays on this device and is never deleted if you do not subscribe.</Text>

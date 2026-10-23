@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **Most current status is section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
+Status: **Most current status is section 17 (iOS enablement implemented and validated as far as Linux allows; the actual iOS build must be started by you).** Before that, section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -803,3 +803,43 @@ Per your instruction ("fix all the bugs first, then iOS"), the Round 5 bug list 
 
 ### 16.5 Next: iOS (R4-B) and store release (R4-C)
 Waiting only on your go-ahead to start. Reminder of what each needs from you: Apple Developer enrolment (held), building the Shortcut on an iPhone, signing credentials.
+
+
+---
+
+## 17. iOS enablement (R4-B) and first iOS build
+
+You asked to build the iOS app first and do the Shortcut afterwards. **I could not run the iOS build myself**: EAS here is not logged in, and an iOS build needs your Apple Developer credentials and a macOS builder (EAS provides one). Everything on my side is prepared and checked, and the steps for you are in 17.4.
+
+### 17.1 What was done
+| ID | State | Detail |
+|---|---|---|
+| R4-B1 iOS config | Done | `app.json`: `platforms: [android, ios]`, `scheme: outspend`, `ios.bundleIdentifier: com.decanode.outspend`, iPhone only, camera and Face ID texts (microphone and speech texts already came from the speech plugin). |
+| R4-B2 eas.json | Done | `ios` keys on every profile; extra `development-simulator` profile. |
+| R4-B3 capture handler | Done | `outspend://capture?text=` (`useCaptureLink`, `SharedCapture.js`, `SmsIngest.handleSharedText`) reuses the existing parser unchanged apart from "no sender". **Every link asks for confirmation** ("Add this transaction? Expense of ... at ...") before anything is saved, because any app or web page can open a link. Unreadable messages are offered in Settings > Review skipped messages. Sharing the same text twice adds it once; a share that matches a manual entry upgrades it instead of duplicating, exactly like an SMS. The date is the share time (the message date is not available to a Shortcut); it can be edited in the Ledger. |
+| R4-B4 recipe | Done | Written into the in-app help (needs verifying on a real iPhone: the exact names of the Shortcuts actions can differ by iOS version). |
+| R4-B5 onboarding | Done | iPhone gets a "Add bank messages" step (how it works, install button once a link exists) instead of SMS permission and history range; Android is unchanged. |
+| R4-B6 help screen | Done | `HowToCapture`, reachable from onboarding and Settings ("How to add bank messages"). iPhone Settings hides the SMS-only rows (sync now, history start date, SMS access, last audit). |
+
+### 17.2 Other iOS fixes found while preparing
+- **WatermelonDB iOS pod:** its `simdjson` dependency lives in an npm package that autolinking skips, so `pod install` would have failed. Added via `expo-build-properties` (`ios.extraPods`), confirmed to reach the Expo autolinker in a real `expo prebuild --platform ios`.
+- **Database adapter:** `jsi` is now Android-only. The JSI installer has not been verified with iOS's New Architecture; iOS uses the bridge adapter (slower, but iOS never bulk-imports). Revisit after the first device run.
+- **Date picker:** the Android dialog does not exist on iOS; iPhone uses the inline compact picker.
+- **Billing:** the purchase request now includes the Apple product (`apple: { sku }`); the paywall says "App Store" on iPhone and no longer mentions Google.
+- **Removed `@react-native-google-signin/google-signin` and `GoogleAuth.js`:** Gmail is dropped from this release, so an unused sign-in SDK would only have added build risk and an App Review disclosure. It is a small stub and easy to restore from git history if Gmail returns.
+- **Not set:** `ITSAppUsesNonExemptEncryption`. Backups use AES-256, so Apple's export-compliance question must be answered by you in App Store Connect rather than guessed here.
+
+### 17.3 What was verified, and what could not be
+- **Verified:** 337 tests; lint clean; the **iOS JavaScript bundle compiles**; `expo prebuild --platform ios` generates a native project in which the URL scheme, camera / microphone / speech / Face ID texts, background modes and the `simdjson` pod are all present and the other config plugins resolve.
+- **Not verified (needs a real iOS build and iPhone):** that the native code compiles under Xcode (WatermelonDB, VisionCamera, react-native-iap, speech recognition on the New Architecture), the bridge-mode database, the Shortcut round trip, notifications, Face ID, StoreKit. Expect that the first build may surface a native error or two; send me the EAS build-log link and I will fix them.
+
+### 17.4 Your steps to get the first iOS build
+1. **Apple Developer Program** (held): make sure the membership is active.
+2. In the Codespace terminal: `npx eas-cli@latest login`, then `npx eas-cli@latest init` if the project has no EAS project id yet (commit the change it makes to `app.json`).
+3. Install on your own iPhone without the App Store (recommended first): `npx eas-cli@latest device:create` (register the iPhone: it gives a link to open on the phone), then `npx eas-cli@latest build --platform ios --profile preview`. EAS asks for your Apple ID and 2FA code once, then creates the certificate and provisioning profile itself. When it finishes it prints an install link/QR; on the iPhone turn on **Settings > Privacy & Security > Developer Mode** first.
+4. If it fails, copy the EAS build-log link and send it to me.
+5. For TestFlight and the App Store later: create the app in App Store Connect with bundle id `com.decanode.outspend`, create the subscription `com.decanode.outspend.premium_monthly`, then `eas build --platform ios --profile production` and `eas submit --platform ios`.
+6. **Try the capture before the Shortcut exists:** on the iPhone open Safari and go to `outspend://capture?text=Rs.250%20debited%20from%20A%2Fc%20XX1234%20to%20SWIGGY%20on%2012-10-26`. Outspend should open and ask "Add this transaction?". If that works, only the Shortcut is left.
+
+### 17.5 Next (after the build runs): the Shortcut
+Once you can open the app on the iPhone and the link test works, we build and test the "Add to Outspend" Shortcut together. When you have the iCloud link, put it in `SHORTCUT_URL` in `src/config.js` (or tell me) so onboarding and help show an install button.

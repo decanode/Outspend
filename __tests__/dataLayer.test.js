@@ -388,3 +388,31 @@ describe('the reported scenario, end to end', () => {
     expect((await currentBudgetPeriod(now)).mode).toBe('MONTH')
   })
 })
+
+describe('shared messages (iPhone share sheet)', () => {
+  const BODY = 'Rs.250.00 debited from A/c XX1234 to SWIGGY on 12-10-26 UPI Ref 628374655'
+  const shared = (ts) => ({ sender: 'SHARED', body: BODY, timestamp: ts, shared: true })
+
+  test('adds the transaction, and sharing the same text again does not duplicate it', async () => {
+    const first = await ingestMessages([shared(T0)])
+    expect(first).toMatchObject({ created: 1, merged: 0 })
+    const again = await ingestMessages([shared(T0 + 3600 * 1000)])
+    expect(again).toMatchObject({ created: 0, merged: 0 })
+    const rows = await all()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ amount: 250, merchant: 'Swiggy', category: 'Food & Dining', source: 'SMS' })
+  })
+
+  test('merges into a manual entry for the same amount, like a received SMS', async () => {
+    await createTransaction({ amount: 250, merchant: 'lunch', type: 'DEBIT', timestamp: T0 - 600000, source: 'MANUAL' })
+    const r = await ingestMessages([shared(T0)])
+    expect(r).toMatchObject({ created: 0, merged: 1 })
+    expect((await all())[0]).toMatchObject({ source: 'VERIFIED_SMS', merchant: 'Swiggy' })
+  })
+
+  test('applies the user\'s merchant rules', async () => {
+    await createRule({ pattern: 'swiggy', mapped_merchant: 'Swiggy Food', category: 'Food & Dining' })
+    await ingestMessages([shared(T0)])
+    expect((await all())[0]).toMatchObject({ merchant: 'Swiggy Food' })
+  })
+})

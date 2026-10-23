@@ -13,6 +13,7 @@ import Accounts from './src/screens/Accounts'
 import Settings from './src/screens/Settings'
 import Plan from './src/screens/Plan'
 import LockScreen from './src/components/LockScreen'
+import useCaptureLink from './src/components/useCaptureLink'
 import Paywall from './src/screens/Paywall'
 import Onboarding from './src/screens/Onboarding'
 import ErrorBoundary from './src/components/ErrorBoundary'
@@ -150,6 +151,8 @@ export default function App() {
   }, [isOnboarded])
 
   const clearPendingSalary = useCallback(() => setPendingSalary(null), [])
+  useCaptureLink(isReady && isOnboarded && !locked) // iPhone share-sheet Shortcut links
+
   const ctx = useMemo(
     () => ({ access, refreshAccess, restartOnboarding, bumpPrefs, pendingSalary, clearPendingSalary }),
     [access, refreshAccess, restartOnboarding, bumpPrefs, pendingSalary, clearPendingSalary]

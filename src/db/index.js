@@ -1,3 +1,4 @@
+import { Platform } from 'react-native'
 import { Database } from '@nozbe/watermelondb'
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite'
 
@@ -15,8 +16,10 @@ import Split from './models/Split'
 const adapter = new SQLiteAdapter({
   schema,
   migrations,
-  // Remove jsi: true if the adapter fails to build on a given device/emulator.
-  jsi: true,
+  // JSI is the fast path and is what Android runs. On iOS the New Architecture (bridgeless) has not been
+  // verified with WatermelonDB's JSI installer, so iOS uses the bridge adapter until it is tested on a device.
+  // iOS only imports what the user shares, so the speed difference does not matter there.
+  jsi: Platform.OS === 'android',
   onSetUpError: error => {
     console.error("Database setup error:", error)
   }

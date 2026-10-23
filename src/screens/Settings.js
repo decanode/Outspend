@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch } from 'react-native'
+import { View, Text, StyleSheet, ScrollView, Alert, ActivityIndicator, Switch, Platform } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { CATEGORY_NAMES } from '../constants/categories'
 import { exportTransactionsToCSV, exportTransactionsToJSON, exportGroupBillPdf } from '../services/ExportService'
@@ -19,6 +19,7 @@ import { enableLock, disableLock, authenticate } from '../services/AppLock'
 import { createEncryptedBackup, pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
 import MerchantRules from './MerchantRules'
 import SkippedMessages from './SkippedMessages'
+import HowToCapture from './HowToCapture'
 import { loadSkipped } from '../services/SkippedLog'
 import { useApp } from '../AppContext'
 
@@ -43,6 +44,8 @@ export default function Settings() {
   const [pickRegion, setPickRegion] = useState(false)
   const [hasData, setHasData] = useState(false)
   const [showSkipped, setShowSkipped] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+  const ios = Platform.OS === 'ios'
   const [skippedCount, setSkippedCount] = useState(0)
 
   const [tick, setTick] = useState(0)
@@ -160,16 +163,16 @@ export default function Settings() {
 
         <View style={[GLASS_STYLES.card, styles.card]}>
           <Text style={styles.rowText}>Plan: {subscription}</Text>
-          <Text style={styles.hint}>SMS access: {smsOk ? 'allowed' : 'not allowed'}{!smsOk ? '  (tap Sync to grant)' : ''}</Text>
-          <Text style={styles.hint}>Last daily audit: {settings && settings.lastAuditAt ? formatDateTime(settings.lastAuditAt) : 'never'}</Text>
-          <Text style={styles.hint}>History starts: {settings && settings.onboardingStartDate ? formatDate(settings.onboardingStartDate) : 'not set'}</Text>
+          {ios ? null : <Text style={styles.hint}>SMS access: {smsOk ? 'allowed' : 'not allowed'}{!smsOk ? '  (tap Sync to grant)' : ''}</Text>}
+          {ios ? null : <Text style={styles.hint}>Last daily audit: {settings && settings.lastAuditAt ? formatDateTime(settings.lastAuditAt) : 'never'}</Text>}
+          {ios ? null : <Text style={styles.hint}>History starts: {settings && settings.onboardingStartDate ? formatDate(settings.onboardingStartDate) : 'not set'}</Text>}
         </View>
 
         {busy ? <View style={styles.busy}><ActivityIndicator color={COLORS.emerald} /><Text style={styles.hint}>  {busy}…</Text></View> : null}
 
         <Text style={styles.section}>Data</Text>
-        <Action title="Sync SMS now" onPress={resync} />
-        <Action title="Change history start date" onPress={() => setShowRange(true)} />
+        {ios ? <Action title="How to add bank messages" onPress={() => setShowHelp(true)} /> : <Action title="Sync SMS now" onPress={resync} />}
+        {ios ? null : <Action title="Change history start date" onPress={() => setShowRange(true)} />}
         <Action title="Manage merchant rules" onPress={() => setShowRules(true)} />
         <Action title={skippedCount > 0 ? `Review skipped messages (${skippedCount})` : 'Review skipped messages'} onPress={() => setShowSkipped(true)} />
 
@@ -287,6 +290,7 @@ export default function Settings() {
           }} />
       ) : null}
 
+      {showHelp ? <HowToCapture onClose={() => setShowHelp(false)} /> : null}
       {showSkipped ? <SkippedMessages onClose={() => setShowSkipped(false)} onChanged={reload} /> : null}
       {showRules ? <MerchantRules onClose={() => setShowRules(false)} /> : null}
     </View>

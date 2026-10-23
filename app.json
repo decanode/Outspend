@@ -7,7 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "platforms": [
-      "android"
+      "android",
+      "ios"
     ],
     "android": {
       "adaptiveIcon": {
@@ -39,7 +40,35 @@
       ],
       "expo-font",
       "expo-sharing",
-      "@react-native-community/datetimepicker"
-    ]
+      "@react-native-community/datetimepicker",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "simdjson",
+                "path": "../node_modules/@nozbe/simdjson",
+                "modular_headers": true
+              }
+            ]
+          }
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Outspend uses Face ID to unlock the app."
+        }
+      ]
+    ],
+    "scheme": "outspend",
+    "ios": {
+      "bundleIdentifier": "com.decanode.outspend",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Outspend uses the camera so you can photograph receipts. Photos stay on your phone."
+      }
+    }
   }
 }

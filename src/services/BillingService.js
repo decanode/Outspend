@@ -71,6 +71,7 @@ export const subscribe = async (offerToken) => {
         skus: [SUBSCRIPTION_SKU],
         subscriptionOffers: offerToken ? [{ sku: SUBSCRIPTION_SKU, offerToken }] : [],
       },
+      apple: { sku: SUBSCRIPTION_SKU },
     },
   })
 }

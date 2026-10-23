@@ -101,3 +101,17 @@ export const handleIncomingSms = (msg) =>
     }
     return r
   })
+
+/**
+ * Add a message the user shared (iPhone share sheet). Same path as a received SMS, minus the sender
+ * check. Returns the ingest result; created/merged are both 0 when the same message was added before.
+ */
+export const handleSharedText = (text, now = Date.now()) =>
+  enqueue(async () => {
+    const settings = await getSettings()
+    if (!settings.isOnboarded) return null
+    const r = await ingestMessages([{ sender: 'SHARED', body: text, timestamp: now, shared: true }])
+    await logSkipped(r.skippedDetails)
+    if (r.created || r.merged) await afterLiveCapture(r.createdTx)
+    return r
+  })

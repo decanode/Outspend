@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Pressable, ScrollView,
   KeyboardAvoidingView, Platform, Animated,
 } from 'react-native'
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { COLORS } from '../theme/designSystem'
 
 export const Button = ({ title, onPress, variant = 'primary', disabled, style }) => (
@@ -59,13 +59,31 @@ export const DateField = ({ label, value, onChange, minimumDate, maximumDate, st
   const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '')
   const current = parts ? new Date(+parts[1], +parts[2] - 1, +parts[3]) : new Date()
   const pad = (n) => String(n).padStart(2, '0')
+  const fmt = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+  if (Platform.OS === 'ios') {
+    return (
+      <View style={style}>
+        {label ? <Text style={styles.label}>{label}</Text> : null}
+        <DateTimePicker
+          value={current}
+          mode="date"
+          display="compact"
+          themeVariant="dark"
+          minimumDate={minimumDate}
+          maximumDate={maximumDate}
+          onChange={(_event, date) => { if (date) onChange(fmt(date)) }}
+          style={{ alignSelf: 'flex-start' }}
+        />
+      </View>
+    )
+  }
   const open = () => DateTimePickerAndroid.open({
     value: current,
     mode: 'date',
     minimumDate,
     maximumDate,
     onChange: (event, date) => {
-      if (event.type === 'set' && date) onChange(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`)
+      if (event.type === 'set' && date) onChange(fmt(date))
     },
   })
   return (

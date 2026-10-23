@@ -149,9 +149,12 @@ const SALARY_INFLOW = /\b(?:salary|payroll|neft credit|imps credit|(?:transferre
  *   not_bank_sender | otp | promo | failed | reminder | no_amount | no_direction
  * `amount` is the figure found in a rejected message (when there is one), so the user can review
  * and add it by hand.
+ *
+ * options.shared: the text was handed over by the user (iPhone share sheet) and has no sender. The
+ * sender check is skipped, and the id depends only on the text, so sharing it twice adds it once.
  */
-export const analyzeSms = (sender, body, timestamp, region = getRegion()) => {
-  if (!isTransactionalSender(sender, region)) return { reject: 'not_bank_sender' }
+export const analyzeSms = (sender, body, timestamp, region = getRegion(), options = {}) => {
+  if (!options.shared && !isTransactionalSender(sender, region)) return { reject: 'not_bank_sender' }
   if (!body) return { reject: 'no_amount' }
   const c = compile(region)
 
@@ -196,7 +199,7 @@ export const analyzeSms = (sender, body, timestamp, region = getRegion()) => {
       source: 'SMS',
       raw_text: body,
       needs_review: !merchant,
-      external_id: smsExternalId(sender, timestamp, body),
+      external_id: options.shared ? smsExternalId('SHARED', 0, body) : smsExternalId(sender, timestamp, body),
       last4: extractLast4(withoutBalance),
       payment_mode: detectPaymentMode(withoutBalance, region),
       vpa: extractVpa(withoutBalance, region),

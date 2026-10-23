@@ -39,12 +39,12 @@ export const planIngest = (messages, ctx) => {
   const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp)
 
   for (const msg of sorted) {
-    const analysis = analyzeSms(msg.sender, msg.body, msg.timestamp)
+    const analysis = analyzeSms(msg.sender, msg.body, msg.timestamp, undefined, { shared: !!msg.shared })
     if (!analysis.tx) {
       skipped++
       if (analysis.amount && analysis.reject !== 'otp' && analysis.reject !== 'not_bank_sender') {
         skippedDetails.push({
-          id: smsExternalId(msg.sender, msg.timestamp, msg.body),
+          id: msg.shared ? smsExternalId('SHARED', 0, msg.body) : smsExternalId(msg.sender, msg.timestamp, msg.body),
           sender: msg.sender,
           timestamp: msg.timestamp,
           body: (msg.body || '').slice(0, 300),
