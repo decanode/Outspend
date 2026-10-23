@@ -15,7 +15,9 @@
 export const SMS_PROFILES = {
   // India: DLT-registered sender ids such as VM-HDFCBK, AX-SBIUPI-S. A "-P" suffix is promotional.
   IN: {
-    senderPattern: /^[A-Za-z]{2}-[A-Za-z0-9&]{3,9}(-[A-Za-z])?$/,
+    // Dashed ids (VM-HDFCBK, AX-SBIUPI-S), plus bare ids (HDFCBK) and numeric short codes, which payroll
+    // gateways and card networks sometimes use. Personal numbers (7+ digits, often with +91) never match.
+    senderPattern: /^[A-Za-z]{2}-[A-Za-z0-9&]{3,9}(-[A-Za-z])?$|^(?=.*[A-Za-z])[A-Za-z0-9&]{3,11}$|^\d{3,6}$/,
     promoSender: /-P$/i,
     vpa: true,
     paymentModes: [

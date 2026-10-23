@@ -18,6 +18,8 @@ import { PassphraseSheet } from '../components/SecuritySheets'
 import { enableLock, disableLock, authenticate } from '../services/AppLock'
 import { createEncryptedBackup, pickBackupFile, restoreEncryptedBackup } from '../services/BackupService'
 import MerchantRules from './MerchantRules'
+import SkippedMessages from './SkippedMessages'
+import { loadSkipped } from '../services/SkippedLog'
 import { useApp } from '../AppContext'
 
 const RANGES = [[30, '30 days'], [90, '90 days'], [180, '6 months'], [365, '1 year']]
@@ -40,14 +42,16 @@ export default function Settings() {
   const [restoreText, setRestoreText] = useState(null)
   const [pickRegion, setPickRegion] = useState(false)
   const [hasData, setHasData] = useState(false)
+  const [showSkipped, setShowSkipped] = useState(false)
+  const [skippedCount, setSkippedCount] = useState(0)
 
   const [tick, setTick] = useState(0)
   const reload = useCallback(() => setTick(t => t + 1), [])
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const [s, ok, n] = await Promise.all([getSettings(), hasSmsPermission(), col('transactions').query().fetchCount()])
-      if (alive) { setSettings(s); setSmsOk(ok); setHasData(n > 0) }
+      const [s, ok, n, skipped] = await Promise.all([getSettings(), hasSmsPermission(), col('transactions').query().fetchCount(), loadSkipped()])
+      if (alive) { setSettings(s); setSmsOk(ok); setHasData(n > 0); setSkippedCount(skipped.entries.length) }
     })()
     return () => { alive = false }
   }, [tick])
@@ -167,6 +171,7 @@ export default function Settings() {
         <Action title="Sync SMS now" onPress={resync} />
         <Action title="Change history start date" onPress={() => setShowRange(true)} />
         <Action title="Manage merchant rules" onPress={() => setShowRules(true)} />
+        <Action title={skippedCount > 0 ? `Review skipped messages (${skippedCount})` : 'Review skipped messages'} onPress={() => setShowSkipped(true)} />
 
         <View style={[GLASS_STYLES.card, styles.card, { marginTop: 8 }]}>
           <Text style={styles.rowText}>Pay cycle</Text>
@@ -282,6 +287,7 @@ export default function Settings() {
           }} />
       ) : null}
 
+      {showSkipped ? <SkippedMessages onClose={() => setShowSkipped(false)} onChanged={reload} /> : null}
       {showRules ? <MerchantRules onClose={() => setShowRules(false)} /> : null}
     </View>
   )

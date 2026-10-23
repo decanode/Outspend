@@ -45,10 +45,23 @@ export const SMS_FIXTURES = [
   { sender: S, body: 'Dear Customer, your A/c XX1234 balance is Rs.45,000.00 as on 12-10-26.', expect: null },
   { sender: S, body: 'Ravi has requested money Rs.500 from you on UPI. Pay now.', expect: null },
   { sender: '+919876543210', body: 'I paid Rs.500 to the plumber yesterday, can you send me back?', expect: null },
-  { sender: 'Mom', body: 'Rs 100 sent to you via gpay', expect: null },
+  { sender: '9876543210', body: 'Rs 100 sent to you via gpay', expect: null }, // personal number, never parsed
   { sender: 'VM-HDFCBK', body: 'Welcome to HDFC Bank NetBanking. Your login was successful.', expect: null },
   { sender: 'AX-SWIGGY', body: 'Your Swiggy order #1234 has been delivered. Enjoy your meal!', expect: null },
   { sender: 'VM-HDFCBK', body: '', expect: null },
+  // ---- Round 4 fixes: salary, card payments, bare/short-code senders
+  { sender: 'HDFCBK', body: 'Rs.2,01,000.00 transferred to your A/c XX1234 on 30-09-26 towards salary. Avl bal Rs.2,40,000.00', expect: { amount: 201000, type: 'CREDIT', last4: '1234' } },
+  { sender: 'VM-HDFCBK', body: 'Salary of Rs.1,95,500.00 has been transferred to your account XX1234 by VW INDIA PVT LTD on 31-07-26', expect: { amount: 195500, type: 'CREDIT' } },
+  { sender: 'AX-SBIINB', body: 'Dear Customer, NEFT credit of Rs 72,000.00 in your A/c XX9988 from ACME CORP SALARY', expect: { amount: 72000, type: 'CREDIT' } },
+  { sender: '56767', body: 'Rs.18,450.00 credited to A/c XX1234 on 03-10-26. UPI Ref 628374655. Avl Bal Rs.50,000', expect: { amount: 18450, type: 'CREDIT' } },
+  { sender: 'AXISBK', body: 'Rs 3,200 spent on Axis Bank Card no. XX6677 at MYNTRA on 08-10-26. Avl Limit: Rs 46,800', expect: { amount: 3200, type: 'DEBIT', merchant: 'Myntra' } },
+  { sender: 'VM-HDFCBK', body: 'Rs.5,000.00 paid towards your HDFC Bank Credit Card XX4321 via autopay on 05-10-26. Next due date 25-10-26.', expect: { amount: 5000, type: 'DEBIT' } },
+  { sender: 'AX-SBICRD', body: 'Payment of Rs.12,345.00 received on your SBI Card XX8899 on 18-10-26. Thank you. Next due date 05-11-26.', expect: { amount: 12345, type: 'CREDIT', last4: '8899' } },
+  { sender: 'VM-HDFCBK', body: 'Your autopay of Rs.5,000 for HDFC credit card was successful. Next due on 25-10-26.', expect: { amount: 5000 } },
+  { sender: 'VM-HDFCBK', body: 'Rs.9,500.00 transferred to Ramesh Kumar from A/c XX1234 on 06-10-26 Ref 99887766', expect: { amount: 9500, type: 'DEBIT', merchant: 'Ramesh Kumar' } },
+  // still rejected: reminders with no completed payment, even with "due" boilerplate
+  { sender: 'VM-HDFCBK', body: 'Your HDFC credit card bill of Rs.12,345.00 is due on 20-10-26. Pay now to avoid late fees.', expect: null },
+  { sender: 'AX-SBICRD', body: 'Minimum amount due Rs.617.00 on card XX8899. Due date 20-10-26.', expect: null },
   // ---- unknown merchant => needs_review
   { sender: S, body: 'Rs.150.00 debited from A/c XX1234 on 12-10-26. UPI Ref 12345', expect: { amount: 150, type: 'DEBIT', merchant: 'Unknown Vendor', needs_review: true } },
 ]

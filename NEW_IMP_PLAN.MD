@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **Most current status is section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
+Status: **Most current status is section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -754,3 +754,52 @@ Design, grounded in the existing `detectSalary` function (`src/services/Planning
 R5-2 (chip contrast, trivial, no logic risk) → R5-1, R5-5, R5-6 (independent, low-risk, no device rebuild needed — pure JS except the date-picker native module) → R5-3 + R5-4 together (filter UI rework, since the account filter is one of the new dropdowns) → R5-8 (pay-cycle detection, the largest item, touches Analytics/Plan/Settings/Notifications).
 
 **Not yet started — awaiting your go-ahead to begin coding.**
+
+
+---
+
+## 16. Bug-fix pass (Round 4-A and Round 5): implemented, awaiting device test
+
+Per your instruction ("fix all the bugs first, then iOS"), the Round 5 bug list and the parser fixes that do not need your sample messages are done. **iOS (R4-B) and store release (R4-C) have not been started.** Verified here: 312 tests pass, lint clean. Not verified: anything on a device. The new date-picker package is a native module, so the next build must be rebuilt.
+
+### 16.1 Round 5 results
+| ID | State | What changed |
+|---|---|---|
+| R5-1 Item name | Done | The old "Notes" field is now "Item / what you bought" in the form and detail, shown in Ledger rows and Home's recent list, and searchable. No schema change. |
+| R5-2 Chip contrast | Done | Unselected chips have a backdrop and readable text everywhere. |
+| R5-3 Ledger filters | Done | Replaced the stacked chip strips with individual dropdowns: Type, Period, Category, Account, Tag (only when tags exist) and Show (everything / expenses without a receipt / hide transfers / only transfers), plus "Clear all filters". Search now also covers the item name. Filtering logic is a pure tested module (`LedgerFilter.js`). |
+| R5-4 Account tracking | Done | Account dropdown includes every account, every card and "Not linked to an account". Each account and card in the Accounts tab has "View transactions", opening the Ledger already filtered (works repeatedly, and you can change it afterwards). |
+| R5-5 Card credits | Done | A credit posted to a card is never counted as income (Analytics, savings rate, salary detection). |
+| R5-6 Calendar | Done | System calendar replaces typed dates in the transaction form (no future dates), goal target date (no past dates) and subscription date. |
+| R5-7 | Not a bug | Month filtering was correct, superseded by R5-8. |
+| R5-8 Pay cycles | Done | See 16.2. |
+
+### 16.2 Pay cycles (R5-8): how it behaves
+- **Detection and confirmation:** when a recurring salary pattern is detected and no source is confirmed, Home asks once: "Is *X* your salary? Yes / No". Yes starts using pay cycles. No is remembered. Settings has a "Pay cycle" card to switch back to calendar months, or to be asked again.
+- **Boundary = the real salary credit**, matched by who paid and ignoring the amount (so a varying amount, or a payday shifted by a weekend, needs no setting). Name variations such as "NEFT-VW INDIA PVT LTD SALARY" match. Two credits within 15 days count as one salary. Card credits, transfers, other currencies and deleted rows are never salary. The salary day belongs to the new cycle.
+- **While the next salary is late**, the current cycle simply stays open and includes today, so current spending never disappears.
+- **Where it applies:** Analytics (the "Month" chip becomes "Pay cycle", with previous/next cycle navigation, projection, cycle-based trends), budgets and their alerts, the Plan tab, Home's "spent this cycle" and daily allowance, and the widget. Weeks are unchanged (Mon-Sun). Before the first detected salary everything stays on calendar months.
+- **Your example:** a 2,01,000 salary on 30 Sep and 24,000 spent in October now shows income 2,01,000 and an 88% savings rate for that cycle, instead of the calendar view's missing income.
+- **"Has your salary arrived?":** in the first five days of a month, if the last salary is older than a week before that month began, one notification asks. Tapping it opens an income entry pre-filled with the salary source; closing it dismisses. At most once per month. Runs at app start and in the daily background task.
+- Limits: the nudge fires on days 1-5 only, so a payer who normally pays on the 5th-10th can trigger a harmless false alarm; trend charts and goal projections for the Week view still use calendar months.
+
+### 16.3 Round 4-A results (SMS reliability)
+| ID | State | What changed |
+|---|---|---|
+| R4-A1 sender pattern | Done, **still needs your real sender IDs to confirm** | India profile now also accepts bare ids (HDFCBK) and numeric short codes, as GLOBAL already did. Phone numbers (7+ digits) never match. Side effect: a contact *name* as sender now passes the sender check, which is fine because Android's inbox stores the raw number for people, but tell me if you ever see personal messages recorded. |
+| R4-A2 direction | Done | "transferred", "trf" and "payment of" no longer force DEBIT. "Rs X transferred to your account towards salary" is now income; "transferred to Ramesh" is still an expense; "Payment of Rs X received on your card" is a credit; an autopay confirmation with no debit word is an expense. Also recognises "credit alert/debit alert". |
+| R4-A3 reminder rejection | Done | "due date / is due / autopay scheduled" boilerplate now only rejects when the message shows nothing was completed, so "Rs 5,000 paid via autopay. Next due date 25 Oct" is recorded while "bill of Rs 12,345 is due on 20 Oct" and statements are still rejected. |
+| R4-A4 diagnostics | Done | The parser reports why it skipped a message (offer / failed payment / reminder or statement / direction unclear). Skipped messages that mention an amount are kept (newest 100, one-time codes excluded) and shown in **Settings > Review skipped messages**, each with "Add as transaction" (amount pre-filled, remembers the link so a re-sync cannot duplicate it) and "Dismiss" (stays dismissed). |
+| R4-A5 Kotlin logging | Done, uncompiled | A refused background start is now logged (`adb logcat -s OutspendSms`). |
+
+**Still wanted from you:** 2-3 real sender IDs and message texts for the salary credit and card payments that were missed (redact digits if you prefer). The fixes above cover the failure modes visible in the code and the Round 4 fixtures, but only your real messages can confirm they cover your bank.
+
+### 16.4 Manual steps
+1. Rebuild the app (new native date-picker module; new Kotlin logging).
+2. Re-run "Sync SMS now" in Settings after updating. Previously-missed messages that now parse will be added, and anything still unrecognised will show under Review skipped messages with a reason.
+3. Confirm the salary prompt on Home, then check Analytics shows "Pay cycle" with sensible income and savings for the period containing your salary.
+4. Try the Ledger dropdowns, the Accounts "View transactions" link, and the calendar pickers on a real phone.
+5. Send me the real salary and card-payment SMS samples.
+
+### 16.5 Next: iOS (R4-B) and store release (R4-C)
+Waiting only on your go-ahead to start. Reminder of what each needs from you: Apple Developer enrolment (held), building the Shortcut on an iPhone, signing credentials.

@@ -197,3 +197,44 @@ describe('R5-3/R5-4: ledger filters', () => {
     expect(spentIn([...rows, tx({ amount: 999, currency: 'USD' })])).toBe(300)
   })
 })
+
+import { mergeSkipped, dismissEntry, emptyState, MAX_LOGGED, REASON_LABELS } from '../src/services/SkippedLog'
+import { planIngest } from '../src/services/IngestPlanner'
+
+describe('R4-A4: skipped-message log', () => {
+  const entry = (id, ts, o = {}) => ({ id, sender: 'VM-HDFCBK', timestamp: ts, body: 'x', reason: 'failed', amount: 100, currency: 'INR', ...o })
+
+  test('new entries are added newest first, duplicates and dismissed ones are not', () => {
+    let s = mergeSkipped(emptyState(), [entry('a', 1), entry('b', 3), entry('a', 1)])
+    expect(s.entries.map(e => e.id)).toEqual(['b', 'a'])
+    expect(mergeSkipped(s, [entry('a', 1)])).toBe(s) // nothing new: same object, no write
+    s = dismissEntry(s, 'a')
+    expect(s.entries.map(e => e.id)).toEqual(['b'])
+    expect(mergeSkipped(s, [entry('a', 1)]).entries.map(e => e.id)).toEqual(['b']) // does not come back on re-sync
+  })
+  test('the list is capped to the newest entries', () => {
+    const many = Array.from({ length: MAX_LOGGED + 20 }, (_, i) => entry(`m${i}`, i))
+    const s = mergeSkipped(emptyState(), many)
+    expect(s.entries).toHaveLength(MAX_LOGGED)
+    expect(s.entries[0].timestamp).toBe(MAX_LOGGED + 19)
+  })
+  test('every logged reason has a readable label', () => {
+    for (const r of ['promo', 'failed', 'reminder', 'no_direction']) expect(REASON_LABELS[r]).toBeTruthy()
+  })
+
+  test('the planner reports what it skipped and why, but not one-time codes or no-money chatter', () => {
+    const ts = 1760000000000
+    const plan = planIngest([
+      { sender: 'VM-HDFCBK', body: 'Paid Rs.100 to Swiggy on 1-1-26', timestamp: ts },
+      { sender: 'VM-HDFCBK', body: 'Txn of Rs.800 at AMAZON failed due to insufficient funds', timestamp: ts + 1 },
+      { sender: 'VM-HDFCBK', body: 'Rs.500 is the fee for your account', timestamp: ts + 2 },
+      { sender: 'VM-HDFCBK', body: 'Your OTP for txn of Rs.1,000 is 123456. Do not share.', timestamp: ts + 3 },
+      { sender: 'VM-HDFCBK', body: 'Welcome to HDFC NetBanking', timestamp: ts + 4 },
+    ], {})
+    expect(plan.creates).toHaveLength(1)
+    expect(plan.skipped).toBe(4)
+    expect(plan.skippedDetails.map(d => [d.reason, d.amount])).toEqual([['failed', 800], ['no_direction', 500]])
+    expect(plan.skippedDetails[0]).toMatchObject({ sender: 'VM-HDFCBK', timestamp: ts + 1, currency: 'INR' })
+    expect(plan.skippedDetails[0].id).toMatch(/^sms_/)
+  })
+})

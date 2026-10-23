@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
+import android.util.Log
 import com.facebook.react.HeadlessJsTaskService
 
 /**
@@ -35,7 +36,9 @@ class SmsReceiver : BroadcastReceiver() {
                 context.startService(service)
             } catch (e: IllegalStateException) {
                 // Background start was refused by the OS. The message is not lost: the delta
-                // sync imports it the next time the app opens or the daily task runs.
+                // sync imports it the next time the app opens or the daily task runs. Logged so a
+                // phone that keeps doing this can be spotted with `adb logcat -s OutspendSms`.
+                Log.w("OutspendSms", "Background start refused; the message will be imported on next sync", e)
             }
         }
     }

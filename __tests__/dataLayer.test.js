@@ -335,3 +335,56 @@ describe('other countries end to end', () => {
     expect((await all())[0].currency).toBe('USD')
   })
 })
+
+import { salaryAnchors, makeCyclePeriod, salaryKey } from '../src/services/PayCycle'
+import { analyzePeriod } from '../src/services/Insights'
+import { currentBudgetPeriod, confirmSalarySource, clearSalarySource } from '../src/data/payCycle'
+import { resetSettings, getSettings } from '../src/services/Settings'
+import { fetchCreditHistory } from '../src/data/payCycle'
+
+describe('the reported scenario, end to end', () => {
+  const day = (y, m, d) => new Date(y, m, d, 11).getTime()
+  const bank = (body, ts) => ({ sender: 'HDFCBK', body, timestamp: ts }) // bare sender id, as payroll gateways use
+
+  beforeEach(async () => { await resetSettings() })
+
+  test('salary credits phrased as a transfer are recorded as income, card payments are recorded, skips are explained', async () => {
+    const r = await ingestMessages([
+      bank('Rs.2,01,000.00 transferred to your A/c XX1234 on 30-09-26 towards salary. Avl bal Rs.2,40,000.00', day(2026, 8, 30)),
+      bank('Rs.5,000.00 paid towards your HDFC Bank Credit Card XX4321 via autopay on 05-10-26. Next due date 25-10-26.', day(2026, 9, 5)),
+      bank('Paid Rs.600 to Swiggy on 12-10-26', day(2026, 9, 12)),
+      bank('Rs.500 is the fee for your account', day(2026, 9, 13)),
+    ])
+    expect(r.created).toBe(3)
+    expect(r.skippedDetails).toHaveLength(1)
+    const rows = (await all()).map(toPlain)
+    expect(rows.find(t => t.amount === 201000)).toMatchObject({ type: 'CREDIT' })
+    expect(rows.find(t => t.amount === 5000)).toMatchObject({ type: 'DEBIT' })
+  })
+
+  test('with the salary confirmed, the current period is the pay cycle and savings are not distorted', async () => {
+    await ingestMessages([
+      bank('Rs.2,00,000.00 transferred to your A/c XX1234 on 31-07-26 towards salary', day(2026, 6, 31)),
+      bank('Rs.2,01,000.00 transferred to your A/c XX1234 on 28-08-26 towards salary', day(2026, 7, 28)),
+      bank('Rs.2,01,000.00 transferred to your A/c XX1234 on 30-09-26 towards salary', day(2026, 8, 30)),
+      bank('Paid Rs.24000 to Rent Landlord on 12-10-26', day(2026, 9, 12)),
+    ])
+    const credits = await fetchCreditHistory(3650)
+    const rows = (await all()).map(toPlain)
+    // The user confirms the salary source shown on the Home card (here the payee the parser stored).
+    const merchant = credits[0].merchant
+    await confirmSalarySource(merchant)
+    expect((await getSettings()).salarySource.key).toBe(salaryKey(merchant))
+    const anchors = salaryAnchors(credits, (await getSettings()).salarySource)
+    expect(anchors).toHaveLength(3)
+    const now = day(2026, 9, 20)
+    const cycle = makeCyclePeriod(anchors, now, now)
+    const a = analyzePeriod(rows, cycle, now)
+    expect(a.income).toBe(201000)
+    expect(a.total).toBe(24000)
+    expect(a.savingsRate).toBe(88)
+    await clearSalarySource()
+    expect((await getSettings()).salarySource).toBeNull()
+    expect((await currentBudgetPeriod(now)).mode).toBe('MONTH')
+  })
+})

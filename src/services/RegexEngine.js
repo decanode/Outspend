@@ -8,20 +8,29 @@ import { ALL_TOKENS, CURRENCIES, CODE_PATTERN } from '../regions/currencies'
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+// "transferred", "trf" and "payment of" are deliberately NOT here: they can mean money out ("transferred
+// to Ramesh") or in ("transferred to your account towards salary", "payment of Rs 500 received"), so they
+// are resolved by direction below.
 const BASE = {
-  debit: ['debited', 'spent', 'paid', 'sent', 'withdrawn', 'purchase', 'purchased', 'payment of', 'txn of', 'transaction of', 'used for', 'transferred', 'trf'],
-  credit: ['credited', 'received', 'deposited', 'added to'],
+  debit: ['debited', 'debit alert', 'debit of', 'spent', 'paid', 'sent', 'withdrawn', 'purchase', 'purchased', 'txn of', 'transaction of', 'used for'],
+  credit: ['credited', 'credit alert', 'credit of', 'received', 'deposited', 'added to'],
   refund: ['refund', 'refunded', 'reversal', 'reversed', 'cashback'],
 }
 
-const REJECT_PATTERNS = [
-  /\b(?:otp|one[- ]time password|verification code|passcode)\b/i,
-  /\bdo not share\b/i,
-  /\b(?:offer|congratulations|pre-?approved|apply now|lowest interest|click here|kyc|upgrade your|limited period|t&c apply|tc apply)\b/i,
-  /\b(?:failed|declined|unsuccessful|not processed|could not be processed|insufficient)\b/i,
-  /\b(?:will be debited|is due|payment due|minimum amount due|due date|due on|has requested|requested money|collect request|autopay.*(?:scheduled|registered))\b/i,
-  /\b(?:statement for|e-?statement|reminder)\b/i,
+// Messages that look like money but are not a completed movement. Each carries the reason that is
+// shown to the user when it is skipped. A "soft" pattern is boilerplate that also appears inside a
+// genuine confirmation ("Autopay successful. Next due date 25 Oct"), so it only rejects when the
+// message shows no sign that something was actually completed.
+const REJECTS = [
+  { reason: 'otp', re: /\b(?:otp|one[- ]time password|verification code|passcode)\b/i },
+  { reason: 'otp', re: /\bdo not share\b/i },
+  { reason: 'promo', re: /\b(?:offer|congratulations|pre-?approved|apply now|lowest interest|click here|kyc|upgrade your|limited period|t&c apply|tc apply)\b/i },
+  { reason: 'failed', re: /\b(?:failed|declined|unsuccessful|not processed|could not be processed|insufficient)\b/i },
+  { reason: 'reminder', re: /\b(?:will be debited|has requested|requested money|collect request|statement for|e-?statement|reminder)\b/i },
+  { reason: 'reminder', soft: true, re: /\b(?:is due|payment due|minimum amount due|due date|due on|autopay.*(?:scheduled|registered))\b/i },
 ]
+
+const COMPLETED = /\b(?:successful(?:ly)?|received|paid|debited|credited|processed|thank you|has been (?:paid|credited|debited))\b/i
 
 const wordsRe = (words) => new RegExp(`\\b(?:${words.map(escapeRe).join('|')})\\b`, 'i')
 
@@ -51,7 +60,7 @@ const compile = (region) => {
     debit: wordsRe([...BASE.debit, ...(extras.debit || [])]),
     credit: wordsRe([...BASE.credit, ...(extras.credit || [])]),
     refund: wordsRe(BASE.refund),
-    reject: [...REJECT_PATTERNS, ...(extras.reject || []).map(w => wordsRe([w]))],
+    reject: [...REJECTS, ...(extras.reject || []).map(w => ({ reason: 'promo', re: wordsRe([w]) }))],
   }
   compiled.set(key, c)
   return c
@@ -132,19 +141,30 @@ const matchAmount = (text, c, region) => {
   return null
 }
 
+const SALARY_INFLOW = /\b(?:salary|payroll|neft credit|imps credit|(?:transferred|trf)\s+(?:to|into|in)\s+(?:your|ur|the)\b|(?:to|in|into)\s+your\s+(?:a\/c|ac|account))/i
+
 /**
- * Parse a bank/merchant SMS into a transaction draft, or null when the message is not a
- * completed money movement (OTP, promo, reminder, failure, chatter, a person's number).
+ * Work out what a message is. Returns { tx } for a completed money movement, or
+ * { reject, amount?, currency? } with a reason code when it is not:
+ *   not_bank_sender | otp | promo | failed | reminder | no_amount | no_direction
+ * `amount` is the figure found in a rejected message (when there is one), so the user can review
+ * and add it by hand.
  */
-export const parseSmsTransaction = (sender, body, timestamp, region = getRegion()) => {
-  if (!isTransactionalSender(sender, region) || !body) return null
+export const analyzeSms = (sender, body, timestamp, region = getRegion()) => {
+  if (!isTransactionalSender(sender, region)) return { reject: 'not_bank_sender' }
+  if (!body) return { reject: 'no_amount' }
   const c = compile(region)
-  if (c.reject.some(re => re.test(body))) return null
 
   // Pull the balance clause out first so "Avl Bal Rs 5,000" is never read as the amount.
   const withoutBalance = body.replace(c.balance, ' ')
   const found = matchAmount(withoutBalance, c, region)
-  if (!found || !(found.amount > 0)) return null
+  const hint = found && found.amount > 0 ? { amount: found.amount, currency: found.currency } : {}
+
+  const completed = COMPLETED.test(body.replace(/will be debited/gi, ' '))
+  for (const r of c.reject) {
+    if (r.re.test(body) && !(r.soft && completed)) return { reject: r.reason, ...hint }
+  }
+  if (!found || !(found.amount > 0)) return { reject: 'no_amount' }
 
   const debitIdx = withoutBalance.search(c.debit)
   const creditIdx = withoutBalance.search(c.credit)
@@ -157,23 +177,33 @@ export const parseSmsTransaction = (sender, body, timestamp, region = getRegion(
     type = 'DEBIT'
   } else if (creditIdx !== -1) {
     type = 'CREDIT'
+  } else if (/\b(?:transferred|trf|salary|payroll|payment of|auto-?pay|auto[- ]?debit|e-?mandate|standing instruction)\b/i.test(withoutBalance)) {
+    // No explicit debit/credit word. "Transferred to your account ... salary" is money in; a transfer to
+    // anyone else, a payment, or an autopay is money out.
+    type = SALARY_INFLOW.test(withoutBalance) ? 'CREDIT' : 'DEBIT'
   }
-  if (!type) return null
+  if (!type) return { reject: 'no_direction', ...hint }
 
   const merchant = extractMerchant(withoutBalance, type, region)
 
   return {
-    amount: found.amount,
-    currency: found.currency,
-    merchant: merchant || 'Unknown Vendor',
-    type,
-    timestamp,
-    source: 'SMS',
-    raw_text: body,
-    needs_review: !merchant,
-    external_id: smsExternalId(sender, timestamp, body),
-    last4: extractLast4(withoutBalance),
-    payment_mode: detectPaymentMode(withoutBalance, region),
-    vpa: extractVpa(withoutBalance, region),
+    tx: {
+      amount: found.amount,
+      currency: found.currency,
+      merchant: merchant || 'Unknown Vendor',
+      type,
+      timestamp,
+      source: 'SMS',
+      raw_text: body,
+      needs_review: !merchant,
+      external_id: smsExternalId(sender, timestamp, body),
+      last4: extractLast4(withoutBalance),
+      payment_mode: detectPaymentMode(withoutBalance, region),
+      vpa: extractVpa(withoutBalance, region),
+    },
   }
 }
+
+/** The transaction draft, or null when the message is not a completed money movement. */
+export const parseSmsTransaction = (sender, body, timestamp, region = getRegion()) =>
+  analyzeSms(sender, body, timestamp, region).tx || null

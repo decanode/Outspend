@@ -12,6 +12,7 @@ One home currency per install, chosen on the first screen (guessed from the phon
 - Merchant rules and categories; unknown payees surface under "Needs attention"
 - Ledger with search, filters, per-day totals, swipe actions, soft delete with undo, edit, receipt photos
 - Analytics for any week or month: change vs the previous period, biggest movers, day-by-day bars, weekday/weekend and time-of-day patterns, small-purchase share, top 10 expenses, cash flow and savings rate, run-rate projection, 6/12-month trends, and a shareable PDF report card
+- Pay cycles: confirm who pays your salary once and spending periods run from salary to salary instead of calendar months; skipped bank messages can be reviewed and added by hand
 - Plan tab: category and overall monthly budgets with daily allowance and 80%/100% alerts, savings goals, upcoming-bills calendar, payday countdown, and money owed to you from split payments
 - Transfers between your own accounts and card-bill payments are detected and kept out of spending and income; splits count only your share; tags group spending (e.g. a trip)
 - Alerts for unusual spend and duplicate charges

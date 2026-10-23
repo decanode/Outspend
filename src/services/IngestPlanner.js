@@ -1,4 +1,5 @@
-import { parseSmsTransaction } from './RegexEngine'
+import { analyzeSms } from './RegexEngine'
+import { smsExternalId } from '../utils/hash'
 import { categorize } from './RuleEngine'
 import { looksLikeTransfer } from './TransferDetector'
 import { homeCurrency } from '../regions'
@@ -16,7 +17,9 @@ const MERGEABLE_SOURCES = ['MANUAL', 'VOICE']
  * ctx = { rules, accounts, cards, existing }
  *   existing: [{ id, external_id, amount, type, timestamp, source, merchant }]
  *
- * Returns { creates: [draft], updates: [{ id, patch }], skipped: n }
+ * Returns { creates: [draft], updates: [{ id, patch }], skipped: n, skippedDetails: [...] }
+ * skippedDetails lists messages that mention money but were not turned into a transaction (with the
+ * reason), so the user can review them. One-time codes and messages with no amount are not listed.
  * Drafts get a temporary `tempId` so refunds can reference debits created in the same batch.
  */
 export const planIngest = (messages, ctx) => {
@@ -30,13 +33,29 @@ export const planIngest = (messages, ctx) => {
   const creates = []
   const updates = []
   let skipped = 0
+  const skippedDetails = []
   let tempCounter = 0
 
   const sorted = [...messages].sort((a, b) => a.timestamp - b.timestamp)
 
   for (const msg of sorted) {
-    const parsed = parseSmsTransaction(msg.sender, msg.body, msg.timestamp)
-    if (!parsed) { skipped++; continue }
+    const analysis = analyzeSms(msg.sender, msg.body, msg.timestamp)
+    if (!analysis.tx) {
+      skipped++
+      if (analysis.amount && analysis.reject !== 'otp' && analysis.reject !== 'not_bank_sender') {
+        skippedDetails.push({
+          id: smsExternalId(msg.sender, msg.timestamp, msg.body),
+          sender: msg.sender,
+          timestamp: msg.timestamp,
+          body: (msg.body || '').slice(0, 300),
+          reason: analysis.reject,
+          amount: analysis.amount,
+          currency: analysis.currency,
+        })
+      }
+      continue
+    }
+    const parsed = analysis.tx
     if (seenExternal.has(parsed.external_id)) { skipped++; continue }
 
     const cat = categorize(parsed, rules)
@@ -109,7 +128,7 @@ export const planIngest = (messages, ctx) => {
     existing.push({ ...draft, id: tempId })
   }
 
-  return { creates, updates, skipped }
+  return { creates, updates, skipped, skippedDetails }
 }
 
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')

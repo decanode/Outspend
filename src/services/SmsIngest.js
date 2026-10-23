@@ -5,6 +5,7 @@ import { getSettings, updateSettings, DEFAULT_IMPORT_DAYS } from './Settings'
 import { isTransactionalSender } from './RegexEngine'
 import { checkCardLimits, notifyNeedsName } from './NotificationService'
 import { afterChange, afterLiveCapture } from './PostChange'
+import { logSkipped } from './SkippedLog'
 
 const PAGE_SIZE = 500
 
@@ -35,6 +36,7 @@ export const importInboxSince = (sinceMs, { onProgress } = {}) =>
       // Ignore chatter before the parser would; keeps batches small on big inboxes.
       const relevant = page.filter(m => isTransactionalSender(m.sender))
       const r = await ingestMessages(relevant)
+      await logSkipped(r.skippedDetails)
       totals.created += r.created
       totals.merged += r.merged
       totals.skipped += r.skipped
@@ -88,6 +90,7 @@ export const handleIncomingSms = (msg) =>
     if (!settings.isOnboarded) return null
 
     const r = await ingestMessages([msg])
+    await logSkipped(r.skippedDetails)
     if (r.created || r.merged) {
       await updateSettings({ lastImportedTimestamp: Math.max(msg.timestamp, settings.lastImportedTimestamp || 0) })
       await checkCardLimits().catch(e => console.error('Card limit check failed', e))
