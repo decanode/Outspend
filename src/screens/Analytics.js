@@ -7,7 +7,9 @@ import { Ionicons } from '@expo/vector-icons'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { categoryColor } from '../constants/categories'
 import { formatMoney } from '../services/Analytics'
-import { makePeriod, shiftPeriod, periodLabel, isCurrentPeriod, analyzePeriod, runRate, monthlyTrend, categoryTrend } from '../services/Insights'
+import { makePeriod, shiftPeriod, periodLabel, isCurrentPeriod, analyzePeriod, runRate, trendFor, categoryTrendFor } from '../services/Insights'
+import { resolveMonthPeriod } from '../services/PayCycle'
+import { peekSettings } from '../services/Settings'
 import { OVERALL } from '../services/Budgets'
 import { exportPeriodReport } from '../services/ExportService'
 import { col, toPlain, watch } from '../data/util'
@@ -34,22 +36,51 @@ const Card = ({ title, children, style }) => (
   </View>
 )
 
-const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => {
+const Body = ({ txs, budgets, mode, offset, setOffset, earliest, trendMonths, setTrendMonths, onOpen }) => {
   const [now] = useState(() => Date.now())
   const plain = useMemo(() => txs.map(toPlain), [txs])
+
+  // "Month" is the pay cycle once a salary source is confirmed. The period is worked out here, from
+  // the transactions, because cycle boundaries are the salary credits themselves.
+  const basePeriod = useMemo(
+    () => (mode === 'WEEK' ? makePeriod('WEEK', now) : resolveMonthPeriod(now, peekSettings().salarySource, plain, (ts) => makePeriod('MONTH', ts), now)),
+    [plain, mode, now]
+  )
+  const period = useMemo(() => { let p = basePeriod; for (let i = 0; i < offset; i++) p = shiftPeriod(p, -1); return p }, [basePeriod, offset])
+  const canGoBack = shiftPeriod(period, -1).end > earliest
+  const current = isCurrentPeriod(period, now)
+
   const a = useMemo(() => analyzePeriod(plain, period), [plain, period])
-  const trend = useMemo(() => monthlyTrend(plain, now, trendMonths), [plain, now, trendMonths])
-  const catTrend = useMemo(() => categoryTrend(plain, now, trendMonths, 5), [plain, now, trendMonths])
+  const trendBase = useMemo(() => (mode === 'WEEK' ? makePeriod('MONTH', now) : basePeriod), [mode, basePeriod, now])
+  const trend = useMemo(() => trendFor(plain, trendBase, trendMonths), [plain, trendBase, trendMonths])
+  const catTrend = useMemo(() => categoryTrendFor(plain, trendBase, trendMonths, 5), [plain, trendBase, trendMonths])
   const cap = budgets.find(b => b.category === OVERALL)
   const rate = runRate(a.total, period)
-  const label = period.mode === 'WEEK' ? 'last week' : 'last month'
+  const label = period.mode === 'WEEK' ? 'last week' : period.mode === 'CYCLE' ? 'last cycle' : 'last month'
 
   const share = async () => {
     try { await exportPeriodReport(period) } catch { Alert.alert('Could not create the report', 'Please try again.') }
   }
 
+  const nav = (
+    <View style={styles.monthRow}>
+      <TouchableOpacity onPress={() => setOffset(offset + 1)} disabled={!canGoBack} hitSlop={12}>
+        <Ionicons name="chevron-back" size={22} color={canGoBack ? COLORS.textPrimary : COLORS.cardBorder} />
+      </TouchableOpacity>
+      <Text style={styles.monthLabel}>{periodLabel(period)}</Text>
+      <TouchableOpacity onPress={() => setOffset(Math.max(0, offset - 1))} disabled={current} hitSlop={12}>
+        <Ionicons name="chevron-forward" size={22} color={current ? COLORS.cardBorder : COLORS.textPrimary} />
+      </TouchableOpacity>
+    </View>
+  )
+
   if (a.total === 0 && a.income === 0) {
-    return <EmptyState title={`Nothing recorded for ${periodLabel(period)}`} hint="Expenses captured from SMS or added by hand will show up here." />
+    return (
+      <>
+        {nav}
+        <EmptyState title={`Nothing recorded for ${periodLabel(period)}`} hint="Expenses captured from SMS or added by hand will show up here." />
+      </>
+    )
   }
 
   const maxTod = Math.max(...Object.values(a.patterns.timeOfDay), 1)
@@ -57,6 +88,7 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
 
   return (
     <>
+      {nav}
       <Card>
         <Text style={styles.big}>{formatMoney(a.total)}</Text>
         <View style={styles.row}>
@@ -70,7 +102,7 @@ const Body = ({ txs, budgets, period, trendMonths, setTrendMonths, onOpen }) => 
         </View>
         {rate ? (
           <Text style={[styles.sub, { marginTop: 10 }]}>
-            At this pace you will spend {formatMoney(Math.round(rate.projected))} this month
+            At this pace you will spend {formatMoney(Math.round(rate.projected))} this {period.mode === 'CYCLE' ? 'pay cycle' : 'month'}
             {cap ? (rate.projected > cap.amount ? `, ${formatMoney(Math.round(rate.projected - cap.amount))} over your ${formatMoney(cap.amount)} budget.` : `, within your ${formatMoney(cap.amount)} budget.`) : '.'}
           </Text>
         ) : null}
@@ -204,41 +236,32 @@ const ObservedBody = withObservables(['since'], ({ since }) => ({
 }))(({ txs, budgets, ...rest }) => <Body txs={txs} budgets={budgets.map(toPlain)} {...rest} />)
 
 export default function Analytics() {
-  const [period, setPeriod] = useState(() => makePeriod('MONTH'))
+  const [mode, setMode] = useState('MONTH')
+  const [offset, setOffset] = useState(0) // how many periods back from the current one
   const [trendMonths, setTrendMonths] = useState(6)
-  const [openId, setOpenId] = useState(null)
   const [opened, setOpened] = useState(null)
   const [requestDelete, undoBar] = useDeleteWithUndo()
   const [since] = useState(() => Date.now() - HISTORY_MONTHS * 31 * 86400000)
-
   const earliest = since + 31 * 86400000
-  const canGoBack = shiftPeriod(period, -1).end > earliest
-  const current = isCurrentPeriod(period)
+  const monthLabelText = peekSettings().salarySource ? 'Pay cycle' : 'Month'
 
   const open = async (id) => {
-    try { setOpened(await col('transactions').find(id)); setOpenId(id) } catch { /* deleted meanwhile */ }
+    try { setOpened(await col('transactions').find(id)) } catch { /* deleted meanwhile */ }
   }
+  const pickMode = (m) => { setMode(m); setOffset(0) }
 
   return (
     <View style={screenStyles.container}>
       <Text style={screenStyles.header}>Analytics</Text>
       <View style={styles.row}>
-        <Chip label="Week" selected={period.mode === 'WEEK'} onPress={() => setPeriod(makePeriod('WEEK'))} />
-        <Chip label="Month" selected={period.mode === 'MONTH'} onPress={() => setPeriod(makePeriod('MONTH'))} />
-      </View>
-      <View style={styles.monthRow}>
-        <TouchableOpacity onPress={() => setPeriod(shiftPeriod(period, -1))} disabled={!canGoBack} hitSlop={12}>
-          <Ionicons name="chevron-back" size={22} color={canGoBack ? COLORS.textPrimary : COLORS.cardBorder} />
-        </TouchableOpacity>
-        <Text style={styles.monthLabel}>{periodLabel(period)}</Text>
-        <TouchableOpacity onPress={() => setPeriod(shiftPeriod(period, 1))} disabled={current} hitSlop={12}>
-          <Ionicons name="chevron-forward" size={22} color={current ? COLORS.cardBorder : COLORS.textPrimary} />
-        </TouchableOpacity>
+        <Chip label="Week" selected={mode === 'WEEK'} onPress={() => pickMode('WEEK')} />
+        <Chip label={monthLabelText} selected={mode === 'MONTH'} onPress={() => pickMode('MONTH')} />
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        <ObservedBody since={since} period={period} trendMonths={trendMonths} setTrendMonths={setTrendMonths} onOpen={open} />
+        <ObservedBody since={since} earliest={earliest} mode={mode} offset={offset} setOffset={setOffset}
+          trendMonths={trendMonths} setTrendMonths={setTrendMonths} onOpen={open} />
       </ScrollView>
-      {openId && opened ? <TransactionDetail transaction={opened} onClose={() => { setOpenId(null); setOpened(null) }} onDelete={requestDelete} /> : null}
+      {opened ? <TransactionDetail transaction={opened} onClose={() => setOpened(null)} onDelete={requestDelete} /> : null}
       {undoBar}
     </View>
   )

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { View, Text } from 'react-native'
-import { Sheet, Chip, Field, Button } from './ui'
+import { Sheet, Chip, Field, Button, DateField } from './ui'
 import { CATEGORIES } from '../constants/categories'
 import { currencySymbolFor } from '../regions'
 import { COLORS } from '../theme/designSystem'
@@ -77,7 +77,7 @@ function TransactionFormBody({ visible, onClose, onSave, initial = {}, title = '
           <Chip key={c.name} label={c.name} color={c.color} selected={category === c.name} onPress={() => setCategory(category === c.name ? null : c.name)} />
         ))}
       </View>
-      <Field label="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} placeholder="2026-10-31" style={{ marginBottom: 8 }} />
+      <DateField label="Date" value={date} onChange={setDate} maximumDate={new Date()} style={{ marginBottom: 8 }} />
       <View style={{ flexDirection: 'row', marginBottom: 12 }}>
         <Chip label="Today" onPress={() => setPreset(0)} />
         <Chip label="Yesterday" onPress={() => setPreset(1)} />
@@ -96,7 +96,7 @@ function TransactionFormBody({ visible, onClose, onSave, initial = {}, title = '
         </>
       ) : null}
       <Field label="Tags (optional, comma separated)" value={tags} onChangeText={setTags} placeholder="trip, work" autoCapitalize="none" style={{ marginBottom: 12 }} />
-      <Field label="Notes (optional)" value={notes} onChangeText={setNotes} style={{ marginBottom: 12 }} />
+      <Field label="Item / what you bought (optional)" value={notes} onChangeText={setNotes} placeholder="e.g. phone charger" style={{ marginBottom: 12 }} />
       {error ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{error}</Text> : null}
       <Button title="Save" onPress={submit} />
       <Button title="Cancel" variant="ghost" onPress={onClose} style={{ marginTop: 4 }} />

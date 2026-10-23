@@ -10,6 +10,8 @@ export const AppContext = createContext({
   refreshAccess: async () => {},
   restartOnboarding: async () => {},
   bumpPrefs: () => {},
+  pendingSalary: null, // set when the "has your salary arrived?" notification is tapped
+  clearPendingSalary: () => {},
 })
 
 export const useApp = () => useContext(AppContext)

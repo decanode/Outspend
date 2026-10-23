@@ -18,7 +18,7 @@ const median = (nums) => {
 export const detectSalary = (txs, now = Date.now()) => {
   const groups = new Map()
   for (const t of txs) {
-    if (t.is_deleted || t.type !== 'CREDIT' || t.transfer === 'AUTO' || t.transfer === 'USER' || t.amount < scaled(5000)) continue
+    if (t.is_deleted || t.type !== 'CREDIT' || t.card_id || t.transfer === 'AUTO' || t.transfer === 'USER' || t.amount < scaled(5000)) continue
     const key = norm(t.merchant)
     if (!key || key === 'unknownvendor') continue
     if (!groups.has(key)) groups.set(key, [])

@@ -10,6 +10,11 @@ import { parseVoiceExpense } from '../services/VoiceParser'
 import { aggregateSpend, accountBalance, dailySpend, monthBounds, formatMoney } from '../services/Analytics'
 import { budgetStatus } from '../services/Budgets'
 import { detectSalary } from '../services/Planning'
+import { resolveMonthPeriod, salaryKey } from '../services/PayCycle'
+import { makePeriod } from '../services/Insights'
+import { peekSettings } from '../services/Settings'
+import { confirmSalarySource, dismissSalaryCandidate } from '../data/payCycle'
+import { useApp } from '../AppContext'
 import { observeBudgets } from '../data/budgets'
 import { afterChange } from '../services/PostChange'
 import { HBar } from '../components/charts'
@@ -59,6 +64,7 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
   const [adding, setAdding] = useState(false)
   const [selected, setSelected] = useState(null)
   const [requestDelete, undoBar] = useDeleteWithUndo()
+  const { bumpPrefs, pendingSalary, clearPendingSalary } = useApp()
   const voice = useRef(null)
 
   useEffect(() => {
@@ -89,9 +95,13 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
     afterChange().catch(() => {})
   }
 
-  const { balance, hasAccounts, monthSpend, week, budget, salary } = useMemo(() => {
-    const now = new Date()
-    const { start, end } = monthBounds(now.getFullYear(), now.getMonth())
+  const { balance, hasAccounts, monthSpend, week, budget, salary, candidate, onCycle } = useMemo(() => {
+    const now = new Date().getTime()
+    const settings = peekSettings()
+    const credits = salaryTxs.map(toPlain)
+    // "This month" is the pay cycle once a salary source is confirmed, else the calendar month.
+    const { start, end, mode } = resolveMonthPeriod(now, settings.salarySource, credits, (ts) => makePeriod('MONTH', ts), now)
+    const found = settings.salarySource ? null : detectSalary(credits)
     const accs = accounts.map(toPlain)
     const bTx = balanceTxs.map(toPlain)
     const wTx = windowTxs.map(toPlain)
@@ -102,7 +112,9 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
       monthSpend: month.total,
       week: dailySpend(wTx),
       budget: budgetStatus(budgets.map(toPlain), month, end).overall,
-      salary: detectSalary(salaryTxs.map(toPlain)),
+      salary: detectSalary(credits),
+      onCycle: mode === 'CYCLE',
+      candidate: found && !(settings.salaryDismissed || []).includes(salaryKey(found.merchant)) ? found : null,
     }
   }, [accounts, balanceTxs, windowTxs, salaryTxs, budgets])
 
@@ -118,7 +130,7 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
           ) : (
             <Text style={styles.noAccounts}>Add an account in the Accounts tab to see your balance.</Text>
           )}
-          <Text style={styles.monthSpend}>Spent this month: {formatMoney(monthSpend)}</Text>
+          <Text style={styles.monthSpend}>Spent this {onCycle ? 'pay cycle' : 'month'}: {formatMoney(monthSpend)}</Text>
           {salary && salary.daysUntil <= 10 ? (
             <Text style={styles.monthSpend}>{salary.daysUntil === 0 ? 'Payday is today' : salary.daysUntil === 1 ? 'Payday is tomorrow' : `Payday in ${salary.daysUntil} days`}</Text>
           ) : null}
@@ -132,6 +144,19 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
               ratio={budget.ratio}
               color={budget.level === 'over' ? COLORS.coral : budget.level === 'warning' ? COLORS.amber : COLORS.emerald}
             />
+          </View>
+        ) : null}
+
+        {candidate ? (
+          <View style={[GLASS_STYLES.card, styles.section]}>
+            <Text style={styles.carouselText}>Is {candidate.merchant} your salary?</Text>
+            <Text style={styles.snippet}>
+              If yes, each spending period starts on the day it arrives, so your income and savings match your real pay period instead of the calendar month.
+            </Text>
+            <View style={{ flexDirection: 'row' }}>
+              <Button title="Yes, it is" onPress={async () => { await confirmSalarySource(candidate.merchant); bumpPrefs() }} style={{ flex: 1, marginRight: 8 }} />
+              <Button title="No" variant="ghost" onPress={async () => { await dismissSalaryCandidate(candidate.merchant); bumpPrefs() }} />
+            </View>
           </View>
         ) : null}
 
@@ -178,6 +203,7 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
               <View style={{ flex: 1 }}>
                 <Text style={screenStyles.rowTitle}>{item.merchant}</Text>
                 <Text style={screenStyles.rowSub}>{formatDate(item.timestamp)}{item.category ? ` · ${item.category}` : ''}</Text>
+                {item.notes ? <Text style={[screenStyles.rowSub, { color: COLORS.textPrimary, opacity: 0.8 }]} numberOfLines={1}>{item.notes}</Text> : null}
               </View>
               <Text style={[screenStyles.amount, { color: item.type === 'DEBIT' ? COLORS.coral : COLORS.emerald }]}>
                 {item.type === 'DEBIT' ? '-' : '+'}{formatMoney(item.amount, item.currency)}
@@ -196,6 +222,8 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
       {listening ? <Text style={styles.listening}>Listening… say e.g. “spent 250 on coffee at Starbucks”</Text> : null}
 
       <TransactionForm visible={adding} onClose={() => setAdding(false)} onSave={(v) => saveEntry(v, 'MANUAL')} />
+      <TransactionForm visible={!!pendingSalary} title="Add your salary" initial={{ type: 'CREDIT', merchant: pendingSalary ? pendingSalary.merchant : '' }}
+        onClose={clearPendingSalary} onSave={async (v) => { await createTransaction({ ...v, source: 'MANUAL' }); clearPendingSalary(); afterChange().catch(() => {}) }} />
       <TransactionForm visible={!!voiceDraft} onClose={() => setVoiceDraft(null)} onSave={(v) => saveEntry(v, 'VOICE')}
         initial={voiceDraft || {}} title="Confirm voice entry" />
       {selected ? <TransactionDetail transaction={selected} onClose={() => setSelected(null)} onDelete={requestDelete} /> : null}
@@ -222,13 +250,13 @@ const styles = StyleSheet.create({
 const enhance = withObservables([], () => {
   const now = new Date()
   const monthStart = monthBounds(now.getFullYear(), now.getMonth()).start
-  const windowStart = Math.min(monthStart, Date.now() - 8 * 86400000)
+  const windowStart = Math.min(monthStart, Date.now() - 45 * 86400000) // also covers a pay cycle that began last month
   const live = Q.where('is_deleted', false)
   return {
     accounts: watch(col('accounts').query()),
     balanceTxs: watch(col('transactions').query(live, Q.where('account_id', Q.notEq(null)))),
     windowTxs: watch(col('transactions').query(live, Q.where('timestamp', Q.gte(windowStart)))),
-    salaryTxs: watch(col('transactions').query(live, Q.where('type', 'CREDIT'), Q.where('timestamp', Q.gte(Date.now() - 100 * 86400000)))),
+    salaryTxs: watch(col('transactions').query(live, Q.where('type', 'CREDIT'), Q.where('timestamp', Q.gte(Date.now() - 200 * 86400000)))),
     budgets: observeBudgets(),
     needsReview: observeNeedsReview(),
     recent: observeRecentTransactions(5),

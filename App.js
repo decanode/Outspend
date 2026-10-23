@@ -54,6 +54,7 @@ export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false)
   const [locked, setLocked] = useState(false)
   const [prefsVersion, setPrefsVersion] = useState(0)
+  const [pendingSalary, setPendingSalary] = useState(null) // { merchant } when the "salary arrived?" notification was tapped
   const backgroundedAt = useRef(null)
   const [access, setAccess] = useState({ status: 'trial', trialDaysLeft: 30, hasAccess: true, enforced: false })
 
@@ -100,7 +101,15 @@ export default function App() {
     if (!isOnboarded) return undefined
     const process = async (response) => {
       try {
-        if (await handleNotificationResponse(response)) await Notifications.clearLastNotificationResponseAsync()
+        if (await handleNotificationResponse(response)) {
+          await Notifications.clearLastNotificationResponseAsync()
+        } else if (response && response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+          const data = response.notification.request.content.data
+          if (data && data.salaryMissing) {
+            setPendingSalary({ merchant: data.merchant || '' })
+            await Notifications.clearLastNotificationResponseAsync()
+          }
+        }
       } catch (e) {
         console.error('Notification reply failed', e)
       }
@@ -140,7 +149,11 @@ export default function App() {
     return () => sub.remove()
   }, [isOnboarded])
 
-  const ctx = useMemo(() => ({ access, refreshAccess, restartOnboarding, bumpPrefs }), [access, refreshAccess, restartOnboarding, bumpPrefs])
+  const clearPendingSalary = useCallback(() => setPendingSalary(null), [])
+  const ctx = useMemo(
+    () => ({ access, refreshAccess, restartOnboarding, bumpPrefs, pendingSalary, clearPendingSalary }),
+    [access, refreshAccess, restartOnboarding, bumpPrefs, pendingSalary, clearPendingSalary]
+  )
 
   let content
   if (!isReady) {

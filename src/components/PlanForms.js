@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Text, View } from 'react-native'
-import { Sheet, Field, Button, Chip } from './ui'
+import { Sheet, Field, Button, Chip, DateField } from './ui'
 import { CATEGORIES } from '../constants/categories'
 import { OVERALL } from '../services/Budgets'
 import { currencySymbolFor } from '../regions'
@@ -69,7 +69,7 @@ function GoalFormBody({ visible, onClose, onSave, onDelete, goal }) {
       <Field label="Goal" value={name} onChangeText={setName} placeholder="New laptop" style={{ marginBottom: 12 }} />
       <Field label={`Target amount (${currencySymbolFor()})`} value={target} onChangeText={setTarget} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
       <Field label={`Saved so far (${currencySymbolFor()})`} value={saved} onChangeText={setSaved} keyboardType="decimal-pad" style={{ marginBottom: 12 }} />
-      <Field label="Target date (YYYY-MM-DD)" value={date} onChangeText={setDate} style={{ marginBottom: 12 }} />
+      <DateField label="Target date" value={date} onChange={setDate} minimumDate={new Date()} style={{ marginBottom: 12 }} />
       <Err text={error} />
       <Button title="Save" onPress={submit} />
       {goal && onDelete ? <Button title="Delete goal" variant="danger" onPress={onDelete} style={{ marginTop: 8 }} /> : null}

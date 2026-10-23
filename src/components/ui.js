@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Pressable, ScrollView,
   KeyboardAvoidingView, Platform, Animated,
 } from 'react-native'
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker'
 import { COLORS } from '../theme/designSystem'
 
 export const Button = ({ title, onPress, variant = 'primary', disabled, style }) => (
@@ -23,6 +24,60 @@ export const Chip = ({ label, selected, onPress, color }) => (
     <Text style={[styles.chipText, selected && { color: COLORS.textPrimary }]}>{label}</Text>
   </TouchableOpacity>
 )
+
+/**
+ * A single-choice control that looks like a field: "Category  Food & Dining ▾". Tapping opens a
+ * sheet with the options. options: [{ value, label }]
+ */
+export const Dropdown = ({ label, value, options, onChange, style }) => {
+  const [open, setOpen] = useState(false)
+  const current = options.find(o => o.value === value)
+  const active = value !== options[0].value // first option is always the "no filter" choice
+  return (
+    <View style={[{ flexBasis: '48%', flexGrow: 1 }, style]}>
+      <TouchableOpacity style={[styles.dropdown, active && { borderColor: COLORS.emerald }]} onPress={() => setOpen(true)}>
+        <Text style={styles.dropdownLabel}>{label}</Text>
+        <Text style={[styles.dropdownValue, active && { color: COLORS.emerald }]} numberOfLines={1}>{current ? current.label : '—'} ▾</Text>
+      </TouchableOpacity>
+      <Sheet visible={open} onClose={() => setOpen(false)} title={label}>
+        {options.map(o => (
+          <TouchableOpacity key={String(o.value)} style={styles.option} onPress={() => { setOpen(false); onChange(o.value) }}>
+            <Text style={[styles.optionText, o.value === value && { color: COLORS.emerald, fontWeight: '700' }]}>{o.label}</Text>
+            {o.value === value ? <Text style={{ color: COLORS.emerald }}>✓</Text> : null}
+          </TouchableOpacity>
+        ))}
+      </Sheet>
+    </View>
+  )
+}
+
+/**
+ * Date field with the system calendar. value/onChange use 'YYYY-MM-DD' strings so forms keep
+ * their existing parsing. Dates are built in local time (no UTC shifting).
+ */
+export const DateField = ({ label, value, onChange, minimumDate, maximumDate, style }) => {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '')
+  const current = parts ? new Date(+parts[1], +parts[2] - 1, +parts[3]) : new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const open = () => DateTimePickerAndroid.open({
+    value: current,
+    mode: 'date',
+    minimumDate,
+    maximumDate,
+    onChange: (event, date) => {
+      if (event.type === 'set' && date) onChange(`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`)
+    },
+  })
+  return (
+    <View style={style}>
+      {label ? <Text style={styles.label}>{label}</Text> : null}
+      <TouchableOpacity style={[styles.input, styles.dateRow]} onPress={open}>
+        <Text style={{ color: COLORS.textPrimary }}>{current.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
+        <Text style={{ color: COLORS.textSecondary }}>📅</Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
 
 export const Field = ({ label, style, ...props }) => (
   <View style={style}>
@@ -99,10 +154,20 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '700' },
   chip: {
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.cardFill, // without a backdrop the muted text vanished on the dark screen
     marginRight: 8, marginBottom: 8,
   },
-  chipText: { color: COLORS.textSecondary, fontSize: 13 },
+  chipText: { color: COLORS.textPrimary, fontSize: 13, opacity: 0.85 },
   label: { color: COLORS.textSecondary, fontSize: 12, marginBottom: 6 },
+  dateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dropdown: {
+    borderWidth: 1, borderColor: COLORS.cardBorder, backgroundColor: COLORS.cardFill, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8, marginRight: 8,
+  },
+  dropdownLabel: { color: COLORS.textSecondary, fontSize: 11 },
+  dropdownValue: { color: COLORS.textPrimary, fontSize: 14, marginTop: 2 },
+  option: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.cardBorder },
+  optionText: { color: COLORS.textPrimary, fontSize: 16 },
   input: {
     backgroundColor: COLORS.inputFill, borderRadius: 8, padding: 10, color: COLORS.textPrimary,
     borderWidth: 1, borderColor: COLORS.cardBorder,

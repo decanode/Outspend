@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { View, Text, StyleSheet, SectionList, TouchableOpacity, ScrollView, TextInput } from 'react-native'
+import { View, Text, StyleSheet, SectionList, TouchableOpacity, TextInput } from 'react-native'
 import withObservables from '@nozbe/with-observables'
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
 import { Ionicons } from '@expo/vector-icons'
@@ -10,10 +10,12 @@ import { createRule } from '../data/rules'
 import { suggestPattern } from '../services/RuleEngine'
 import { formatMoney, monthBounds, isTransfer, shareOf } from '../services/Analytics'
 import { isForeignCurrency } from '../regions'
+import { DEFAULT_FILTERS, UNASSIGNED, filterTransactions, hasActiveFilters, spentIn } from '../services/LedgerFilter'
+import { watch, col } from '../data/util'
 import { parseTags } from '../services/Planning'
 import { afterChange } from '../services/PostChange'
 import { dayLabel, startOfDay } from '../utils/format'
-import { Chip, EmptyState, screenStyles } from '../components/ui'
+import { Dropdown, EmptyState, screenStyles } from '../components/ui'
 import TransactionForm from '../components/TransactionForm'
 import TransactionDetail from '../components/TransactionDetail'
 import CategoryPicker from '../components/CategoryPicker'
@@ -21,8 +23,18 @@ import useDeleteWithUndo from '../components/useDeleteWithUndo'
 
 const PAGE = 150
 
-const TYPES = [['ALL', 'All'], ['DEBIT', 'Expense'], ['CREDIT', 'Income'], ['REFUND', 'Refund']]
-const PERIODS = [['MONTH', 'This month'], ['30D', '30 days'], ['ALL', 'All time']]
+const TYPE_OPTIONS = [
+  { value: 'ALL', label: 'All types' }, { value: 'DEBIT', label: 'Expenses' },
+  { value: 'CREDIT', label: 'Income' }, { value: 'REFUND', label: 'Refunds' },
+]
+const PERIOD_OPTIONS = [
+  { value: 'ALL', label: 'All time' }, { value: 'WEEK', label: 'This week' },
+  { value: 'MONTH', label: 'This month' }, { value: '30D', label: 'Last 30 days' },
+]
+const SHOW_OPTIONS = [
+  { value: 'ALL', label: 'Everything' }, { value: 'NO_RECEIPT', label: 'Expenses without a receipt' },
+  { value: 'HIDE_TRANSFERS', label: 'Hide transfers' }, { value: 'TRANSFERS', label: 'Only transfers' },
+]
 
 // Resolved when a chip is tapped (not during render) so the window is stable between renders.
 const periodStart = (key) => {
@@ -59,6 +71,7 @@ const Row = React.memo(function Row({ item, onOpen, onCategory, onDelete }) {
           <Text style={screenStyles.rowSub}>
             {transfer ? '↔ Transfer' : item.category || UNCATEGORIZED} · {item.source === 'VERIFIED_SMS' ? 'SMS ✓' : item.source}{item.receipt_path ? ' · 🧾' : ''}{split ? ` · your share ${formatMoney(item.my_share)}` : ''}
           </Text>
+          {item.notes ? <Text style={styles.item} numberOfLines={1}>{item.notes}</Text> : null}
           {item.tags ? <Text style={styles.tags}>{item.tags.split(',').map(t => `#${t}`).join(' ')}</Text> : null}
         </View>
         <Text style={[screenStyles.amount, { color: credit ? COLORS.emerald : COLORS.coral }]}>
@@ -69,19 +82,28 @@ const Row = React.memo(function Row({ item, onOpen, onCategory, onDelete }) {
   )
 })
 
-const Ledger = ({ transactions }) => {
-  const [query, setQuery] = useState('')
-  const [type, setType] = useState('ALL')
-  const [period, setPeriod] = useState({ key: 'ALL', from: 0 })
-  const [category, setCategory] = useState(null)
-  const [tag, setTag] = useState(null)
-  const [onlyNoReceipt, setOnlyNoReceipt] = useState(false)
-  const [hideTransfers, setHideTransfers] = useState(false)
+const Ledger = ({ transactions, accounts, cards, route }) => {
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+  const [periodKey, setPeriodKey] = useState('ALL')
+  // The Accounts tab opens this screen with { accountId, token }. A newer token wins over the
+  // dropdown until the user changes it again, so no effect is needed to sync it.
+  const params = (route && route.params) || {}
+  const [accountPick, setAccountPick] = useState({ token: null, value: null })
+  const account = accountPick.token === (params.token || null) && accountPick.token !== null
+    ? accountPick.value
+    : params.accountId || filters.account
+  const setAccount = (value) => setAccountPick({ token: params.token || null, value })
   const [limit, setLimit] = useState(PAGE)
   const [adding, setAdding] = useState(false)
   const [selected, setSelected] = useState(null)
   const [categorizing, setCategorizing] = useState(null)
   const [requestDelete, undoBar] = useDeleteWithUndo()
+
+  const setFilter = (patch) => { setFilters(f => ({ ...f, ...patch })); setLimit(PAGE) }
+  const pickPeriod = (key) => { setPeriodKey(key); setFilter({ from: periodStart(key) }) }
+  const clearAll = () => { setFilters(DEFAULT_FILTERS); setPeriodKey('ALL'); setAccountPick({ token: params.token || null, value: null }); setLimit(PAGE) }
+
+  const effective = useMemo(() => ({ ...filters, account }), [filters, account])
 
   const allTags = useMemo(() => {
     const counts = new Map()
@@ -89,26 +111,21 @@ const Ledger = ({ transactions }) => {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([x]) => x)
   }, [transactions])
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return transactions.filter(t => {
-      if (t.timestamp < period.from) return false
-      if (type !== 'ALL' && t.type !== type) return false
-      if (category && (t.category || UNCATEGORIZED) !== category) return false
-      if (tag && !parseTags(t.tags).includes(tag)) return false
-      if (onlyNoReceipt && (t.type !== 'DEBIT' || t.receipt_path)) return false
-      if (hideTransfers && isTransfer(t)) return false
-      if (q && !`${t.merchant} ${t.category || ''} ${t.notes || ''} ${t.tags || ''} ${t.amount}`.toLowerCase().includes(q)) return false
-      return true
-    })
-  }, [transactions, query, type, period, category, tag, onlyNoReceipt, hideTransfers])
+  const filtered = useMemo(() => filterTransactions(transactions, effective), [transactions, effective])
+  const spentInView = useMemo(() => spentIn(filtered), [filtered])
 
-  // What the current filter adds up to, e.g. the full cost of a trip tag. Transfers never count.
-  const spentInView = useMemo(() => filtered.reduce((sum, t) => {
-    if (isTransfer(t) || isForeignCurrency(t)) return sum
-    if (t.type === 'DEBIT') return sum + shareOf(t)
-    return t.type === 'REFUND' ? sum - t.amount : sum
-  }, 0), [filtered])
+  const accountOptions = useMemo(() => [
+    { value: null, label: 'All accounts' },
+    ...accounts.map(a => ({ value: a.id, label: a.name })),
+    ...cards.map(c => ({ value: c.id, label: `${c.name} (card)` })),
+    { value: UNASSIGNED, label: 'Not linked to an account' },
+  ], [accounts, cards])
+  const categoryOptions = useMemo(() => [
+    { value: null, label: 'All categories' },
+    ...CATEGORIES.map(c => ({ value: c.name, label: c.name })),
+    { value: UNCATEGORIZED, label: 'Uncategorised' },
+  ], [])
+  const tagOptions = useMemo(() => [{ value: null, label: 'All tags' }, ...allTags.map(t => ({ value: t, label: `#${t}` }))], [allTags])
 
   const sections = useMemo(() => {
     const map = new Map()
@@ -125,9 +142,7 @@ const Ledger = ({ transactions }) => {
     return [...map.values()]
   }, [filtered, limit])
 
-  const filtersActive = query || type !== 'ALL' || period.key !== 'ALL' || category || tag || onlyNoReceipt || hideTransfers
-  const reset = () => { setQuery(''); setType('ALL'); setPeriod({ key: 'ALL', from: 0 }); setCategory(null); setTag(null); setOnlyNoReceipt(false); setHideTransfers(false); setLimit(PAGE) }
-  const pickPeriod = (key) => setPeriod(period.key === key ? { key: 'ALL', from: 0 } : { key, from: periodStart(key) })
+  const filtersActive = hasActiveFilters(effective)
 
   const chooseCategory = async (cat, applyAll) => {
     const tx = categorizing
@@ -143,33 +158,20 @@ const Ledger = ({ transactions }) => {
 
       <TextInput
         style={styles.search}
-        placeholder="Search merchant, category, tag, amount"
+        placeholder="Search merchant, item, category, tag, amount"
         placeholderTextColor={COLORS.textSecondary}
-        value={query}
-        onChangeText={(v) => { setQuery(v); setLimit(PAGE) }}
+        value={filters.query}
+        onChangeText={(v) => setFilter({ query: v })}
       />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip}>
-        <Chip label="This week" selected={period.key === 'WEEK'} color={COLORS.blue} onPress={() => pickPeriod('WEEK')} />
-        <Chip label="Uncategorised" selected={category === UNCATEGORIZED} onPress={() => setCategory(category === UNCATEGORIZED ? null : UNCATEGORIZED)} />
-        <Chip label="Needs receipt" selected={onlyNoReceipt} onPress={() => setOnlyNoReceipt(!onlyNoReceipt)} />
-        <Chip label="Hide transfers" selected={hideTransfers} onPress={() => setHideTransfers(!hideTransfers)} />
-        {filtersActive ? <Chip label="Clear all" color={COLORS.coral} onPress={reset} /> : null}
-      </ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip}>
-        {TYPES.map(([k, l]) => <Chip key={k} label={l} selected={type === k} onPress={() => setType(k)} />)}
-        {PERIODS.map(([k, l]) => <Chip key={k} label={l} selected={period.key === k} color={COLORS.blue} onPress={() => setPeriod({ key: k, from: periodStart(k) })} />)}
-      </ScrollView>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip}>
-        <Chip label="All categories" selected={!category} onPress={() => setCategory(null)} />
-        {[...CATEGORIES.map(c => c.name), UNCATEGORIZED].map(name => (
-          <Chip key={name} label={name} selected={category === name} onPress={() => setCategory(category === name ? null : name)} />
-        ))}
-      </ScrollView>
-      {allTags.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip}>
-          {allTags.map(t => <Chip key={t} label={`#${t}`} selected={tag === t} color={COLORS.amber} onPress={() => setTag(tag === t ? null : t)} />)}
-        </ScrollView>
-      ) : null}
+      <View style={styles.dropdowns}>
+        <Dropdown label="Type" value={filters.type} options={TYPE_OPTIONS} onChange={(v) => setFilter({ type: v })} />
+        <Dropdown label="Period" value={periodKey} options={PERIOD_OPTIONS} onChange={pickPeriod} />
+        <Dropdown label="Category" value={filters.category} options={categoryOptions} onChange={(v) => setFilter({ category: v })} />
+        <Dropdown label="Account" value={account} options={accountOptions} onChange={(v) => { setAccount(v); setFilter({ account: v }) }} />
+        {allTags.length > 0 ? <Dropdown label="Tag" value={filters.tag} options={tagOptions} onChange={(v) => setFilter({ tag: v })} /> : null}
+        <Dropdown label="Show" value={filters.show} options={SHOW_OPTIONS} onChange={(v) => setFilter({ show: v })} />
+      </View>
+      {filtersActive ? <Text style={styles.clear} onPress={clearAll}>Clear all filters</Text> : null}
 
       <Text style={styles.summary}>
         {filtered.length} transaction{filtered.length === 1 ? '' : 's'}{filtered.length ? ` · spent ${formatMoney(Math.max(spentInView, 0))}` : ''}
@@ -213,15 +215,21 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.inputFill, borderRadius: 10, padding: 10, color: COLORS.textPrimary,
     borderWidth: 1, borderColor: COLORS.cardBorder, marginBottom: 10,
   },
-  strip: { flexGrow: 0, marginBottom: 2 },
+  dropdowns: { flexDirection: 'row', flexWrap: 'wrap' },
+  clear: { color: COLORS.coral, fontWeight: '600', marginBottom: 4 },
   summary: { color: COLORS.textSecondary, fontSize: 12, marginTop: 6 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 14, marginBottom: 8 },
   sectionTitle: { color: COLORS.textSecondary, fontSize: 14 },
   sectionTotal: { color: COLORS.textSecondary, fontSize: 13, fontVariant: ['tabular-nums'] },
   card: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   tags: { color: COLORS.amber, fontSize: 11, marginTop: 3 },
+  item: { color: COLORS.textPrimary, fontSize: 12, marginTop: 3, opacity: 0.8 },
   action: { justifyContent: 'center', width: 110, borderRadius: 16, marginBottom: 8 },
   actionText: { color: '#fff', fontWeight: 'bold' },
 })
 
-export default withObservables([], () => ({ transactions: observeLiveTransactions() }))(Ledger)
+export default withObservables([], () => ({
+  transactions: observeLiveTransactions(),
+  accounts: watch(col('accounts').query()),
+  cards: watch(col('credit_cards').query()),
+}))(Ledger)

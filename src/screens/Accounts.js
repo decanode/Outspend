@@ -13,11 +13,11 @@ import { fetchLiveTransactions } from '../data/transactions'
 import { col, toPlain, watch } from '../data/util'
 import { Button, Field, EmptyState, SectionTitle, screenStyles } from '../components/ui'
 import { AccountForm, CardForm, SubscriptionForm } from '../components/AccountForms'
-import { formatDate, parseSignedAmount } from '../utils/format'
+import { formatDate, parseSignedAmount, uniqueToken } from '../utils/format'
 
 const LEVEL_COLOR = { ok: COLORS.emerald, warning: COLORS.amber, critical: COLORS.coral }
 
-const AccountCard = ({ account, balance, onEdit }) => {
+const AccountCard = ({ account, balance, onEdit, onView }) => {
   const [input, setInput] = useState('')
   const adjust = () => {
     const value = parseSignedAmount(input)
@@ -33,6 +33,7 @@ const AccountCard = ({ account, balance, onEdit }) => {
         <Text style={styles.cardTitle}>{account.name}{account.last4 ? `  ••${account.last4}` : ''}</Text>
         <Text style={styles.link} onPress={onEdit}>Edit</Text>
       </View>
+      <Text style={[styles.link, { marginBottom: 8 }]} onPress={onView}>View transactions ›</Text>
       <Text style={styles.balance}>App balance: {balance < 0 ? '-' : ''}{formatMoney(balance)}</Text>
       <View style={styles.inputRow}>
         <Field placeholder="Actual balance" keyboardType="decimal-pad" value={input} onChangeText={setInput} style={{ flex: 1, marginRight: 8 }} />
@@ -42,7 +43,7 @@ const AccountCard = ({ account, balance, onEdit }) => {
   )
 }
 
-const CardTile = ({ card, spend, onEdit }) => {
+const CardTile = ({ card, spend, onEdit, onView }) => {
   const ratio = utilisation(spend, card.limit)
   const level = utilisationLevel(ratio)
   return (
@@ -51,6 +52,7 @@ const CardTile = ({ card, spend, onEdit }) => {
         <Text style={styles.cardTitle}>{card.name}{card.last4 ? `  ••${card.last4}` : ''}</Text>
         <Text style={styles.link} onPress={onEdit}>Edit</Text>
       </View>
+      <Text style={[styles.link, { marginBottom: 8 }]} onPress={onView}>View transactions ›</Text>
       <Text style={[styles.balance, level !== 'ok' && { color: LEVEL_COLOR[level] }]}>
         {formatMoney(spend)} / {formatMoney(card.limit)} this cycle{level === 'critical' ? ' · limit almost reached' : ''}
       </Text>
@@ -61,7 +63,9 @@ const CardTile = ({ card, spend, onEdit }) => {
   )
 }
 
-const Accounts = ({ accounts, cards, subscriptions, movements }) => {
+const Accounts = ({ accounts, cards, subscriptions, movements, navigation }) => {
+  // Open the Ledger already filtered to this account or card. The token makes repeat taps count as new.
+  const viewTransactions = (id) => navigation.navigate('Ledger', { accountId: id, token: uniqueToken() })
   const [accountForm, setAccountForm] = useState(null) // null | {} (new) | model
   const [cardForm, setCardForm] = useState(null)
   const [subForm, setSubForm] = useState(null)
@@ -138,12 +142,12 @@ const Accounts = ({ accounts, cards, subscriptions, movements }) => {
         <SectionTitle right={<Text style={styles.link} onPress={() => setAccountForm({})}>+ Add</Text>}>Accounts</SectionTitle>
         {accounts.length === 0
           ? <EmptyState title="No accounts yet" hint="Add your bank account with its current balance. Add the last 4 digits so SMS alerts are matched automatically." />
-          : accounts.map(a => <AccountCard key={a.id} account={a} balance={balances.get(a.id) || 0} onEdit={() => setAccountForm(a)} />)}
+          : accounts.map(a => <AccountCard key={a.id} account={a} balance={balances.get(a.id) || 0} onEdit={() => setAccountForm(a)} onView={() => viewTransactions(a.id)} />)}
 
         <SectionTitle right={<Text style={styles.link} onPress={() => setCardForm({})}>+ Add</Text>}>Credit cards</SectionTitle>
         {cards.length === 0
           ? <EmptyState title="No cards yet" hint="Track limit usage and get alerts at 80% and 95%." />
-          : cards.map(c => <CardTile key={c.id} card={c} spend={spends.get(c.id) || 0} onEdit={() => setCardForm(c)} />)}
+          : cards.map(c => <CardTile key={c.id} card={c} spend={spends.get(c.id) || 0} onEdit={() => setCardForm(c)} onView={() => viewTransactions(c.id)} />)}
 
         <SectionTitle right={<Text style={styles.link} onPress={() => setSubForm({})}>+ Add</Text>}>Subscriptions</SectionTitle>
         {suggestions.map(s => (

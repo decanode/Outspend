@@ -64,7 +64,7 @@ function TransactionDetail({ transaction: tx, onClose, onDelete }) {
       <Row label="Tags" value={tx.tags ? tx.tags.split(',').map(t => `#${t}`).join(' ') : null} />
       <Row label="Your share" value={tx.my_share !== null && tx.my_share !== undefined ? formatMoney(tx.my_share) : null} />
       <Row label="Transfer" value={isTransfer(tx) ? (tx.transfer === 'USER' ? 'Yes (you marked it)' : 'Yes (detected), not counted as spending') : null} />
-      <Row label="Notes" value={tx.notes} />
+      <Row label="Item" value={tx.notes} />
       {tx.raw_text ? (
         <View style={styles.raw}>
           <Text style={styles.label}>Original message</Text>

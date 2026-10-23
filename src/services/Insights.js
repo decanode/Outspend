@@ -1,5 +1,6 @@
 import { spendEntries, aggregateSpend, incomeTotal, shareOf } from './Analytics'
 import { scaled, dateLocale, isForeignCurrency } from '../regions'
+import { shiftCycle, cycleLength } from './PayCycle'
 
 const DAY = 86400000
 
@@ -20,6 +21,7 @@ export const makePeriod = (mode, ts = Date.now()) => {
 }
 
 export const shiftPeriod = (p, delta) => {
+  if (p.mode === 'CYCLE') return shiftCycle(p, delta)
   const d = new Date(p.start)
   return p.mode === 'WEEK'
     ? makePeriod('WEEK', new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * delta, 12).getTime())
@@ -30,6 +32,11 @@ export const isCurrentPeriod = (p, now = Date.now()) => now >= p.start && now < 
 export const periodDays = (p) => Math.round((p.end - p.start) / DAY)
 
 export const periodLabel = (p) => {
+  if (p.mode === 'CYCLE') {
+    const fmt = (ts) => new Date(ts).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' })
+    const last = p.open ? 'today' : fmt(p.end - DAY)
+    return `${fmt(p.start)} – ${last}${p.open ? '' : ` ${new Date(p.end - DAY).getFullYear()}`}`
+  }
   if (p.mode === 'MONTH') return new Date(p.start).toLocaleDateString(dateLocale(), { month: 'long', year: 'numeric' })
   const a = new Date(p.start)
   const b = new Date(p.end - DAY)
@@ -137,11 +144,44 @@ export const analyzePeriod = (txs, period, now = Date.now()) => {
 
 /** "At this pace you will spend X this month." Null when it is too early or not the current month. */
 export const runRate = (total, period, now = Date.now()) => {
-  if (period.mode !== 'MONTH' || !isCurrentPeriod(period, now)) return null
+  if ((period.mode !== 'MONTH' && period.mode !== 'CYCLE') || !isCurrentPeriod(period, now)) return null
   const elapsed = Math.ceil((now - period.start) / DAY)
   if (elapsed < 3) return null
-  const days = periodDays(period)
+  const days = period.mode === 'CYCLE' ? Math.max(periodDays(period), cycleLength(period.anchors)) : periodDays(period)
   return { projected: (total / elapsed) * days, elapsed, days }
+}
+
+/** The `count` periods ending with `period` (oldest first), stepping by calendar month or by pay cycle. */
+export const periodsBack = (period, count) => {
+  const list = [period]
+  for (let i = 1; i < count; i++) list.unshift(shiftPeriod(list[0], -1))
+  return list
+}
+
+/** Spending and income for each of the last `count` periods, for the trend chart. */
+export const trendFor = (txs, period, count = 6) =>
+  periodsBack(period, count).map(p => ({
+    start: p.start,
+    label: new Date(p.start).toLocaleDateString(dateLocale(), { month: 'short' }),
+    total: aggregateSpend(txs, p.start, p.end).total,
+    income: incomeTotal(txs, p.start, p.end),
+  }))
+
+/** Per-category series over the same periods. */
+export const categoryTrendFor = (txs, period, count = 6, topN = 5) => {
+  const periods = periodsBack(period, count)
+  const series = new Map()
+  periods.forEach((p, idx) => {
+    const seen = new Map(aggregateSpend(txs, p.start, p.end).categories.map(c => [c.name, c.amount]))
+    for (const name of new Set([...series.keys(), ...seen.keys()])) {
+      if (!series.has(name)) series.set(name, Array(idx).fill(0))
+      series.get(name).push(seen.get(name) || 0)
+    }
+  })
+  return [...series.entries()]
+    .map(([name, values]) => ({ name, values, total: values.reduce((a, b) => a + b, 0) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, topN)
 }
 
 /** Last `months` calendar months ending with the month containing endTs, oldest first. */

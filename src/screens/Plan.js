@@ -6,6 +6,8 @@ import { COLORS, GLASS_STYLES } from '../theme/designSystem'
 import { categoryColor } from '../constants/categories'
 import { aggregateSpend, formatMoney } from '../services/Analytics'
 import { makePeriod, averageSurplus } from '../services/Insights'
+import { resolveMonthPeriod } from '../services/PayCycle'
+import { peekSettings } from '../services/Settings'
 import { budgetStatus, goalProgress } from '../services/Budgets'
 import { detectSalary, upcomingBills, owedByPerson } from '../services/Planning'
 import { col, toPlain, watch } from '../data/util'
@@ -28,10 +30,13 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
   const [goalForm, setGoalForm] = useState(null)
   const [moneyGoal, setMoneyGoal] = useState(null)
 
-  const { status, salary, bills, owed, surplus } = useMemo(() => {
+  const { status, salary, bills, owed, surplus, onCycle } = useMemo(() => {
     const plainTxs = recent.map(toPlain)
-    const month = makePeriod('MONTH')
+    const now = new Date().getTime()
+    // Budgets run per pay cycle once a salary source is confirmed, per calendar month otherwise.
+    const month = resolveMonthPeriod(now, peekSettings().salarySource, plainTxs, (ts) => makePeriod('MONTH', ts), now)
     return {
+      onCycle: month.mode === 'CYCLE',
       status: budgetStatus(budgets.map(toPlain), aggregateSpend(plainTxs, month.start, month.end), month.end),
       salary: detectSalary(plainTxs),
       bills: upcomingBills(subs.map(toPlain)),
@@ -67,7 +72,7 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
           </Card>
         ) : null}
 
-        <SectionTitle right={<Text style={styles.link} onPress={() => setBudgetForm({})}>+ Budget</Text>}>Budgets this month</SectionTitle>
+        <SectionTitle right={<Text style={styles.link} onPress={() => setBudgetForm({})}>+ Budget</Text>}>{onCycle ? 'Budgets this pay cycle' : 'Budgets this month'}</SectionTitle>
         {budgets.length === 0 ? (
           <EmptyState title="No budgets yet" hint="Set an overall monthly cap or limits per category and get a nudge at 80% and 100%." />
         ) : (
@@ -76,7 +81,7 @@ const Plan = ({ budgets, goals, subs, splits, recent }) => {
               <Card>
                 <TouchableOpacity onPress={() => setBudgetForm(budgets.find(b => b.id === o.id))}>
                   <View style={styles.rowBetween}>
-                    <Text style={styles.title}>Monthly cap</Text>
+                    <Text style={styles.title}>{onCycle ? 'Cycle cap' : 'Monthly cap'}</Text>
                     <Pill text={o.level === 'over' ? 'Over budget' : o.level === 'warning' ? 'Close to the limit' : 'On track'} color={LEVEL_COLOR[o.level]} />
                   </View>
                   <HBar label={`${formatMoney(o.spent)} of ${formatMoney(o.amount)}`} value={`${Math.round(o.ratio * 100)}%`} ratio={o.ratio} color={LEVEL_COLOR[o.level]} />

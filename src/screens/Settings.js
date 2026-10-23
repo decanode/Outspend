@@ -11,6 +11,7 @@ import { monthBounds } from '../services/Analytics'
 import { applyRegionSettings, getRegion, currencySymbol } from '../regions'
 import RegionPicker from '../components/RegionPicker'
 import { col } from '../data/util'
+import { clearSalarySource } from '../data/payCycle'
 import { formatDateTime, formatDate } from '../utils/format'
 import { Button, Chip, Sheet } from '../components/ui'
 import { PassphraseSheet } from '../components/SecuritySheets'
@@ -166,6 +167,25 @@ export default function Settings() {
         <Action title="Sync SMS now" onPress={resync} />
         <Action title="Change history start date" onPress={() => setShowRange(true)} />
         <Action title="Manage merchant rules" onPress={() => setShowRules(true)} />
+
+        <View style={[GLASS_STYLES.card, styles.card, { marginTop: 8 }]}>
+          <Text style={styles.rowText}>Pay cycle</Text>
+          {settings && settings.salarySource ? (
+            <>
+              <Text style={styles.hint}>Spending periods start on the day your salary from {settings.salarySource.merchant} arrives, so income and spending line up.</Text>
+              <Button title="Go back to calendar months" variant="ghost" style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                onPress={async () => { await clearSalarySource(); reload(); bumpPrefs() }} />
+            </>
+          ) : (
+            <>
+              <Text style={styles.hint}>Using calendar months. When a recurring salary is detected, the Home tab asks you to confirm it.</Text>
+              {settings && (settings.salaryDismissed || []).length > 0 ? (
+                <Button title="Ask me about salary again" variant="ghost" style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                  onPress={async () => { await updateSettings({ salaryDismissed: [] }); reload(); bumpPrefs() }} />
+              ) : null}
+            </>
+          )}
+        </View>
 
         <Text style={styles.section}>Export</Text>
         <Action title="Export data to CSV" onPress={() => run('Exporting', exportTransactionsToCSV)} />

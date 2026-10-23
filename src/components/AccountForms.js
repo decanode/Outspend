@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Text, View } from 'react-native'
-import { Sheet, Field, Button, Chip } from './ui'
+import { Sheet, Field, Button, Chip, DateField } from './ui'
 import { currencySymbolFor } from '../regions'
 import { COLORS } from '../theme/designSystem'
 import { parseAmount, parseSignedAmount, parseDateInput, toDateInput } from '../utils/format'
@@ -101,7 +101,7 @@ function SubscriptionFormBody({ visible, onClose, onSave, subscription }) {
         <Chip label="Monthly" selected={cycle === 'MONTHLY'} onPress={() => setCycle('MONTHLY')} />
         <Chip label="Yearly" selected={cycle === 'YEARLY'} onPress={() => setCycle('YEARLY')} />
       </View>
-      <Field label="Next billing date (YYYY-MM-DD)" value={date} onChangeText={setDate} style={{ marginBottom: 12 }} />
+      <DateField label="Next billing date" value={date} onChange={setDate} style={{ marginBottom: 12 }} />
       {error ? <Text style={{ color: COLORS.coral, marginBottom: 8 }}>{error}</Text> : null}
       <Button title="Save" onPress={submit} />
       <Button title="Cancel" variant="ghost" onPress={onClose} style={{ marginTop: 4 }} />

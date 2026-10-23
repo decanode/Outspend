@@ -19,6 +19,9 @@ export const DEFAULT_SETTINGS = {
   region: null, // country preset id (null = guess from the phone until chosen)
   currency: null, // only used for the "Other country" preset
   numberStyle: 'AUTO', // AUTO = follow the country; IN = 12,34,567; INTL = 1,234,567
+  salarySource: null, // { key, merchant } once the user confirms who pays their salary: cycles start at those credits
+  salaryDismissed: [], // merchant keys the user said are NOT salary
+  salaryNudgedMonth: null, // 'YYYY-MM' of the last "has your salary arrived?" nudge
   alertsAnomaly: true, // unusual-spend and duplicate-charge alerts
   alertsBudget: true, // budget threshold alerts
   budgetAlerts: {}, // `${periodStart}:${budgetId}` -> level already notified
@@ -37,6 +40,9 @@ export const loadSettings = async () => {
 }
 
 export const getSettings = async () => cache || loadSettings()
+
+/** Synchronous read of the already-loaded settings (defaults before startup finishes). */
+export const peekSettings = () => cache || DEFAULT_SETTINGS
 
 export const updateSettings = async (patch) => {
   const current = await getSettings()

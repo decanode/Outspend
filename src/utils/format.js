@@ -51,3 +51,7 @@ export const parseSignedAmount = (str) => {
 export const SOURCE_LABELS = {
   SMS: 'SMS', VERIFIED_SMS: 'SMS (verified)', MANUAL: 'Manual', VOICE: 'Voice', GMAIL: 'Email',
 }
+
+let tokenCounter = 0
+/** A value that differs on every call; used to make repeated navigations to the same screen count as new. */
+export const uniqueToken = () => `${++tokenCounter}`

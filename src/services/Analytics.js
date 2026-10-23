@@ -80,7 +80,8 @@ export const aggregateSpend = (txs, start, end) => {
 /** Money received in [start, end): salary, gifts, interest. Refunds and transfers are not income. */
 export const incomeTotal = (txs, start, end) =>
   live(txs)
-    .filter(t => t.type === 'CREDIT' && !isTransfer(t) && !isForeignCurrency(t) && t.timestamp >= start && t.timestamp < end)
+    // A credit posted to a card (refund, adjustment, bill payment) is never personal income.
+    .filter(t => t.type === 'CREDIT' && !t.card_id && !isTransfer(t) && !isForeignCurrency(t) && t.timestamp >= start && t.timestamp < end)
     .reduce((sum, t) => sum + t.amount, 0)
 
 const startOfDay = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime() }

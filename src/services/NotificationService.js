@@ -6,7 +6,8 @@ import { col, toPlain } from '../data/util'
 import { rollForward } from './SubscriptionDetector'
 import { fetchBudgets } from '../data/budgets'
 import { budgetStatus } from './Budgets'
-import { makePeriod } from './Insights'
+import { currentBudgetPeriod, fetchCreditHistory } from '../data/payCycle'
+import { salaryAnchors, salaryMissingThisMonth } from './PayCycle'
 import { cardSpend, cycleStart, utilisation, utilisationLevel, formatMoney, aggregateSpend } from './Analytics'
 import { getSettings, updateSettings } from './Settings'
 import { nameTransactionById } from '../data/naming'
@@ -129,6 +130,26 @@ export const checkCardLimits = async () => {
 }
 
 /**
+ * Early in the month, if the confirmed salary has not arrived, ask once whether it is late.
+ * Tapping the notification opens an income entry pre-filled with the salary source.
+ */
+export const checkSalaryArrived = async () => {
+  const settings = await getSettings()
+  if (!settings.salarySource) return
+  const now = new Date()
+  const monthKey = `${now.getFullYear()}-${now.getMonth() + 1}`
+  if (settings.salaryNudgedMonth === monthKey) return
+  const anchors = salaryAnchors(await fetchCreditHistory(), settings.salarySource)
+  if (!salaryMissingThisMonth(anchors)) return
+  const sent = await notifyAlert(
+    'Has your salary arrived?',
+    `We have not seen a credit from ${settings.salarySource.merchant} yet. Tap to add it.`,
+    { salaryMissing: true, merchant: settings.salarySource.merchant }
+  )
+  if (sent) await updateSettings({ salaryNudgedMonth: monthKey })
+}
+
+/**
  * Roll lapsed billing dates forward, reschedule every reminder and re-check card limits.
  * Called on app start, after sync, and whenever subscriptions change.
  */
@@ -142,6 +163,7 @@ export const refreshReminders = async () => {
     if (perm.granted) await scheduleSubscriptionReminder(sub)
   }
   if (perm.granted) await checkCardLimits()
+  if (perm.granted) await checkSalaryArrived().catch(e => console.error('Salary check failed', e))
 }
 
 /**
@@ -197,7 +219,7 @@ export const checkBudgets = async () => {
   const budgets = (await fetchBudgets()).map(toPlain)
   if (!budgets.length) return
 
-  const month = makePeriod('MONTH')
+  const month = await currentBudgetPeriod()
   const txs = await fetchTransactionsBetween(month.start, month.end)
   const status = budgetStatus(budgets, aggregateSpend(txs, month.start, month.end), month.end)
   const alerts = {}
@@ -207,7 +229,7 @@ export const checkBudgets = async () => {
   for (const row of [status.overall, ...status.categories].filter(Boolean)) {
     const key = `${month.start}:${row.id}`
     if (LEVEL_RANK[row.level] <= LEVEL_RANK[alerts[key] || 'ok']) continue
-    const name = row.category === 'ALL' ? 'Monthly budget' : `${row.category} budget`
+    const name = row.category === 'ALL' ? 'Overall budget' : `${row.category} budget`
     await notifyAlert(
       row.level === 'over' ? `${name} exceeded` : `${name} at ${Math.round(row.ratio * 100)}%`,
       `${formatMoney(row.spent)} spent of ${formatMoney(row.amount)}.`
