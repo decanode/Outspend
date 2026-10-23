@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **Most current status is section 17 (iOS enablement implemented and validated as far as Linux allows; the actual iOS build must be started by you).** Before that, section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
+Status: **Most current status is section 18 (Codemagic + TestFlight route: workflow file added, awaiting your account setup).** Before that, section 17 (iOS enablement implemented and validated as far as Linux allows; the actual iOS build must be started by you).** Before that, section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -843,3 +843,37 @@ You asked to build the iOS app first and do the Shortcut afterwards. **I could n
 
 ### 17.5 Next (after the build runs): the Shortcut
 Once you can open the app on the iPhone and the link test works, we build and test the "Add to Outspend" Shortcut together. When you have the iCloud link, put it in `SHORTCUT_URL` in `src/config.js` (or tell me) so onboarding and help show an install button.
+
+
+---
+
+## 18. Building with Codemagic and testing with TestFlight (instead of EAS)
+
+You chose Codemagic + TestFlight. This replaces steps 2-5 of 17.4 (the EAS commands); everything else in section 17 still applies. `codemagic.yaml` is in the repo root. **It has never been run**, so treat the first build as a shake-down; if it fails, send me the build log (the xcodebuild log is saved as an artifact) and I will fix it.
+
+### 18.1 How the workflow works
+`ios/` is generated, not committed, so the workflow does: install dependencies (`npm ci --legacy-peer-deps`) -> run the tests -> `expo prebuild --platform ios` (reads `app.json`) -> `pod install` -> apply code signing -> raise the build number above the last TestFlight build -> build the IPA -> upload to TestFlight. It builds on a Codemagic Mac (Apple-silicon, latest Xcode), so no Mac of your own is needed.
+
+### 18.2 One-time setup (all needs you)
+| # | Where | What |
+|---|---|---|
+| 1 | Apple Developer account (held) | Active paid membership. |
+| 2 | App Store Connect > Users and Access > Integrations > App Store Connect API | Create a **Team Key** with role **App Manager** (or Admin). Download the `.p8` file (only offered once) and note the **Key ID** and **Issuer ID**. Codemagic uses this to create the certificate, provisioning profile, and upload. |
+| 3 | Apple Developer > Identifiers | Register the App ID `com.decanode.outspend` (Codemagic can also do this, but doing it yourself avoids surprises). |
+| 4 | App Store Connect > Apps > + New App | Create the app: platform iOS, name **Outspend** (names are global, so it may be taken: pick another name here, the on-device name stays Outspend), bundle id `com.decanode.outspend`, any SKU. Copy its numeric **Apple ID** from App Information. |
+| 5 | Codemagic | Sign in with GitHub, add the repository `decanode/Outspend`, choose the `codemagic.yaml` workflow. Under Teams > Integrations > App Store Connect add the key from step 2 and name it exactly **Outspend** (or change `integrations.app_store_connect` in the file to match). |
+| 6 | `codemagic.yaml` | Replace `REPLACE_WITH_APP_STORE_CONNECT_APPLE_ID` with the number from step 4 and commit. Tell me instead and I will do it. |
+| 7 | Codemagic | Start a build on branch `feat/implementation`. First build is slow (roughly 20-40 minutes). |
+| 8 | App Store Connect > TestFlight | After processing, answer the **export compliance** question for the build (see 18.3), then add yourself as an Internal Tester (the Apple ID must be on your team) and install with the TestFlight app. Internal testers need no Apple review. |
+
+You do **not** need a Mac, device registration (UDIDs) or EAS for this route. TestFlight does not need Developer Mode either.
+
+### 18.3 Decision needed: encryption export compliance
+Each TestFlight build will wait at "Missing Compliance" until the encryption question is answered in App Store Connect. The app uses standard AES-256 only to encrypt the user's own backup file on the phone. Whether that is exempt, and whether any annual self-classification is needed, is your call (or your lawyer's), so I have **not** set `ITSAppUsesNonExemptEncryption` in `app.json`. If you decide it is exempt, tell me and I will add the key so builds stop waiting for the question.
+
+### 18.4 Other things to know
+- **Testing a link before the Shortcut exists** (Safari on the iPhone): `outspend://capture?text=Rs.250%20debited%20from%20A%2Fc%20XX1234%20to%20SWIGGY%20on%2012-10-26`.
+- **Same-version rebuilds:** every upload gets a new build number automatically; the visible version stays 1.0.0 until you change `version` in `app.json`.
+- **If prebuild-time config changes** (permissions, plugins), they take effect on the next Codemagic build with no extra step, because the iOS project is regenerated each time.
+- **Costs:** Codemagic gives a monthly free allowance of Mac build minutes for personal projects; check their current limits before running many builds.
+- **Android** is unaffected. If you want Codemagic to build the Android APK/AAB as well, I can add a second workflow.
