@@ -20,6 +20,7 @@ import { createEncryptedBackup, pickBackupFile, restoreEncryptedBackup } from '.
 import MerchantRules from './MerchantRules'
 import SkippedMessages from './SkippedMessages'
 import HowToCapture from './HowToCapture'
+import { pasteAndOffer } from '../components/captureFlow'
 import { loadSkipped } from '../services/SkippedLog'
 import { useApp } from '../AppContext'
 
@@ -171,7 +172,7 @@ export default function Settings() {
         {busy ? <View style={styles.busy}><ActivityIndicator color={COLORS.emerald} /><Text style={styles.hint}>  {busy}…</Text></View> : null}
 
         <Text style={styles.section}>Data</Text>
-        {ios ? <Action title="How to add bank messages" onPress={() => setShowHelp(true)} /> : <Action title="Sync SMS now" onPress={resync} />}
+        {ios ? <><Action title="Paste a bank message" onPress={pasteAndOffer} /><Action title="How to add bank messages" onPress={() => setShowHelp(true)} /></> : <Action title="Sync SMS now" onPress={resync} />}
         {ios ? null : <Action title="Change history start date" onPress={() => setShowRange(true)} />}
         <Action title="Manage merchant rules" onPress={() => setShowRules(true)} />
         <Action title={skippedCount > 0 ? `Review skipped messages (${skippedCount})` : 'Review skipped messages'} onPress={() => setShowSkipped(true)} />

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, Alert } from 'react-native'
+import { View, Text, StyleSheet, FlatList, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native'
 import withObservables from '@nozbe/with-observables'
 import { Q } from '@nozbe/watermelondb'
 import { BarChart } from 'react-native-gifted-charts'
@@ -15,6 +15,8 @@ import { makePeriod } from '../services/Insights'
 import { peekSettings } from '../services/Settings'
 import { confirmSalarySource, dismissSalaryCandidate } from '../data/payCycle'
 import { useApp } from '../AppContext'
+import { pasteAndOffer } from '../components/captureFlow'
+import HowToCapture from './HowToCapture'
 import { observeBudgets } from '../data/budgets'
 import { afterChange } from '../services/PostChange'
 import { HBar } from '../components/charts'
@@ -63,6 +65,7 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
   const [voiceDraft, setVoiceDraft] = useState(null)
   const [adding, setAdding] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
   const [requestDelete, undoBar] = useDeleteWithUndo()
   const { bumpPrefs, pendingSalary, clearPendingSalary } = useApp()
   const voice = useRef(null)
@@ -147,6 +150,19 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
           </View>
         ) : null}
 
+        {Platform.OS === 'ios' ? (
+          <View style={[GLASS_STYLES.card, styles.section]}>
+            <Text style={styles.carouselText}>Add a bank message</Text>
+            <Text style={styles.snippet}>
+              Open the message in Messages, touch and hold it, tap Copy, then come back here and tap Paste.
+            </Text>
+            <View style={{ flexDirection: 'row' }}>
+              <Button title="Paste bank message" onPress={pasteAndOffer} style={{ flex: 1, marginRight: 8 }} />
+              <Button title="How it works" variant="ghost" onPress={() => setShowHelp(true)} />
+            </View>
+          </View>
+        ) : null}
+
         {candidate ? (
           <View style={[GLASS_STYLES.card, styles.section]}>
             <Text style={styles.carouselText}>Is {candidate.merchant} your salary?</Text>
@@ -227,6 +243,7 @@ const Dashboard = ({ accounts, balanceTxs, windowTxs, salaryTxs, budgets, needsR
       <TransactionForm visible={!!voiceDraft} onClose={() => setVoiceDraft(null)} onSave={(v) => saveEntry(v, 'VOICE')}
         initial={voiceDraft || {}} title="Confirm voice entry" />
       {selected ? <TransactionDetail transaction={selected} onClose={() => setSelected(null)} onDelete={requestDelete} /> : null}
+      {showHelp ? <HowToCapture onClose={() => setShowHelp(false)} /> : null}
       {undoBar}
     </View>
   )

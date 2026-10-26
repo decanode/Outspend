@@ -5,6 +5,14 @@ import { analyzeSms } from './RegexEngine'
 
 export const CAPTURE_SCHEME = 'outspend://capture'
 
+export const MAX_SHARED_LENGTH = 2000
+
+/** Trim shared/pasted text; null when it is empty or too long to be a single bank message. */
+export const cleanSharedText = (text) => {
+  const t = typeof text === 'string' ? text.trim() : ''
+  return t && t.length <= MAX_SHARED_LENGTH ? t : null
+}
+
 const decodeQueryValue = (v) => {
   try { return decodeURIComponent(v.replace(/\+/g, ' ')) } catch { return null }
 }
@@ -17,9 +25,7 @@ export const parseCaptureUrl = (url) => {
   for (const pair of query.split('&')) {
     const eq = pair.indexOf('=')
     if (eq > -1 && pair.slice(0, eq) === 'text') {
-      const text = decodeQueryValue(pair.slice(eq + 1))
-      const trimmed = text ? text.trim() : ''
-      return trimmed && trimmed.length <= 2000 ? trimmed : null
+      return cleanSharedText(decodeQueryValue(pair.slice(eq + 1)))
     }
   }
   return null

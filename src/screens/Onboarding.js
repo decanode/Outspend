@@ -82,7 +82,7 @@ export default function Onboarding({ onComplete }) {
           <>
             <Text style={styles.title}>Add bank messages</Text>
             <Text style={styles.subtitle}>
-              iPhone does not let any app read your messages. Instead, you share a bank message to Outspend with one tap and it is added. Nothing leaves your phone.
+              iPhone does not let any app read your messages. Instead, you copy a bank message and tap Paste in Outspend, and it is added. Nothing leaves your phone.
             </Text>
             <Button title="Show me how" onPress={() => setShowHelp(true)} style={styles.full} />
             {SHORTCUT_URL ? <Button title="Install the shortcut" variant="ghost" onPress={() => Linking.openURL(SHORTCUT_URL)} style={styles.full} /> : null}

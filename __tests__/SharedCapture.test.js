@@ -1,4 +1,4 @@
-import { parseCaptureUrl, previewSharedText } from '../src/services/SharedCapture'
+import { parseCaptureUrl, previewSharedText, cleanSharedText, MAX_SHARED_LENGTH } from '../src/services/SharedCapture'
 import { planIngest } from '../src/services/IngestPlanner'
 import { analyzeSms } from '../src/services/RegexEngine'
 import { setRegion } from '../src/regions'
@@ -76,5 +76,22 @@ describe('planning shared messages', () => {
     const plan = planIngest([shared('Rs.500 is the fee for your account', 1000), shared('Rs.500 is the fee for your account', 99999)], {})
     expect(plan.skippedDetails.map(d => d.reason)).toEqual(['no_direction', 'no_direction'])
     expect(plan.skippedDetails[0].id).toBe(plan.skippedDetails[1].id) // the log merges them into one entry
+  })
+})
+
+describe('pasted text', () => {
+  test('is trimmed, and empty, non-text or oversized clipboards are refused', () => {
+    expect(cleanSharedText('  Rs.250 debited from A/c XX1234  \n')).toBe('Rs.250 debited from A/c XX1234')
+    for (const bad of ['', '   \n', null, undefined, 42, {}, 'x'.repeat(MAX_SHARED_LENGTH + 1)]) expect(cleanSharedText(bad)).toBeNull()
+    expect(cleanSharedText('x'.repeat(MAX_SHARED_LENGTH))).toHaveLength(MAX_SHARED_LENGTH)
+  })
+  test('a copied bank message with line breaks is understood like the SMS it came from', () => {
+    const copied = '\n  Rs.250.00 debited from A/c XX1234\nto SWIGGY on 12-10-26 UPI Ref 628374655  \n'
+    expect(previewSharedText(cleanSharedText(copied))).toMatchObject({ ok: true, tx: { amount: 250, type: 'DEBIT' } })
+  })
+  test('something that is not a bank message is never offered for adding', () => {
+    for (const text of ['https://example.com/article', 'Lunch at 1pm?', 'Call me back, 555-1234']) {
+      expect(previewSharedText(text).ok).toBe(false)
+    }
   })
 })

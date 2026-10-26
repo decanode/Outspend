@@ -1,6 +1,6 @@
 # Outspend: Implementation Plan for Pending Features
 
-Status: **Most current status is section 18 (Codemagic + TestFlight route: workflow file added, awaiting your account setup).** Before that, section 17 (iOS enablement implemented and validated as far as Linux allows; the actual iOS build must be started by you).** Before that, section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
+Status: **Most current status is section 19 (iPhone capture changed to Copy + Paste; the Shortcut is now optional).** Before that, section 18 (Codemagic + TestFlight route: workflow file added, awaiting your account setup).** Before that, section 17 (iOS enablement implemented and validated as far as Linux allows; the actual iOS build must be started by you).** Before that, section 16 (bug-fix pass implemented 2026-10-23; iOS next).** Before that, section 14 (Round 4, added 2026-10-23: SMS reliability fixes, iOS Shortcuts capture, dual-store release — planning only, no code written yet).** Rounds 1-3 (sections 8, 12, 13) are implemented on `feat/implementation` and awaiting device testing. Earlier history below (sections 0-7) is the original planning pass and is kept for traceability; some of its claims (e.g. "no implementation work has started") are superseded by sections 8+.
 Baseline: commit `7af465e` (Initial commit), branch `main`.
 Stack: Expo SDK ~57, React Native 0.86, WatermelonDB, React Navigation (bottom tabs), plain JS, Android native SMS module.
 
@@ -877,3 +877,25 @@ Each TestFlight build will wait at "Missing Compliance" until the encryption que
 - **If prebuild-time config changes** (permissions, plugins), they take effect on the next Codemagic build with no extra step, because the iOS project is regenerated each time.
 - **Costs:** Codemagic gives a monthly free allowance of Mac build minutes for personal projects; check their current limits before running many builds.
 - **Android** is unaffected. If you want Codemagic to build the Android APK/AAB as well, I can add a second workflow.
+
+
+---
+
+## 19. iPhone capture without a Shortcut (Copy + Paste), added 2026-10-26
+
+**Why the plan changed.** You could not create the Shortcut, and asked for a ready-made one to download from the app. That is not possible for two reasons:
+- **iOS only imports a `.shortcut` file that Apple has signed**, and signing needs a Mac (or Apple's iCloud sharing from a Shortcut that already exists). A file generated here would be refused, even if its contents were perfect.
+- Even the Shortcut route was shakier than assumed: Messages does not offer a share button on a message bubble in every iOS version, so "select message > Share" is not guaranteed to exist. Touch-and-hold > **Copy** always does.
+
+**What replaces it (built, works with no setup):**
+1. In Messages, touch and hold the bank message and tap **Copy**.
+2. In Outspend, tap **Paste bank message** (Home tab card, or Settings).
+3. Outspend reads the clipboard, shows "Add this transaction? Expense of ... at ...", and adds it on **Add**.
+
+It uses the same parser and the same rules as an SMS on Android (merchant rules, categories, transfer detection, refund linking, merging with a manual entry, de-duplication, review of unreadable messages). The first time, iPhone shows its own "Allow Paste" prompt; the in-app help explains how to stop it asking every time (Settings > Apps > Outspend > Paste from Other Apps > Allow). Nothing is added without your confirmation, and a clipboard that is not a bank message is never offered. Dated today, editable later.
+
+**What stays:** the `outspend://capture?text=` link handler is unchanged, and the help screen keeps an optional "one tap from the share sheet" recipe for anyone who wants to build the Shortcut. `SHORTCUT_URL` in `src/config.js` stays empty unless you build one and share its iCloud link.
+
+**Verified:** 340 tests (including clipboard cleaning, line breaks in copied text, and non-bank text such as links being refused); lint clean; iOS bundle compiles. **Not verified on a device:** the actual clipboard read and the Allow Paste prompt. This adds one native module (`expo-clipboard`), so the next Codemagic build needs no manual step beyond running.
+
+**Possible later improvement (not built):** a real iOS Share Extension target would put "Outspend" in the share sheet of apps that allow text sharing, with no Shortcut. It needs custom native code and is a bigger change; say so if Paste proves too slow in practice.

@@ -13,7 +13,7 @@ const Step = ({ n, children }) => (
 
 /**
  * iPhone only. iOS never lets an app read your messages, so you hand over a bank message yourself:
- * select it, tap Share, choose the Outspend Shortcut. Nothing is sent anywhere.
+ * copy it in Messages and paste it into Outspend (or, optionally, share it through a Shortcut).
  */
 export default function HowToCapture({ onClose }) {
   return (
@@ -25,37 +25,36 @@ export default function HowToCapture({ onClose }) {
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
           <Text style={styles.lead}>
-            Apple does not allow any app to read your text messages, so Outspend cannot see them on its own. Instead you share a bank message to Outspend, and it is added in one tap. The message never leaves your phone.
+            Apple does not allow any app to read your text messages, so Outspend cannot see them on its own. Instead you copy a bank message and paste it into Outspend. It takes a few seconds, and the message never leaves your phone.
           </Text>
 
           <Text style={styles.section}>Each time</Text>
           <View style={[GLASS_STYLES.card, styles.card]}>
             <Step n="1">Open the bank message in Messages.</Step>
-            <Step n="2">Touch and hold the message, tap More, and select it. Then tap the Share button.</Step>
-            <Step n="3">Choose Add to Outspend. Outspend opens and shows what it understood.</Step>
-            <Step n="4">Tap Add. If the shop is unknown, name it from the Needs attention card on Home.</Step>
+            <Step n="2">Touch and hold the message bubble, then tap Copy.</Step>
+            <Step n="3">Open Outspend and tap Paste bank message on the Home tab. If iPhone asks, tap Allow Paste.</Step>
+            <Step n="4">Check what Outspend understood and tap Add. If the shop is unknown, name it from the Needs attention card.</Step>
           </View>
           <Text style={styles.note}>
-            The transaction is dated today. Open it in the Ledger to change the date. Sharing the same message twice adds it once.
+            The transaction is dated today; open it in the Ledger to change the date. Pasting the same message twice adds it once. To stop iPhone asking each time, go to Settings, Apps, Outspend, Paste from Other Apps, and choose Allow.
           </Text>
 
-          <Text style={styles.section}>One-time setup</Text>
+          <Text style={styles.section}>Optional: one tap from the share sheet</Text>
           {SHORTCUT_URL ? (
             <Button title="Install the Add to Outspend shortcut" onPress={() => Linking.openURL(SHORTCUT_URL)} />
           ) : (
             <View style={[GLASS_STYLES.card, styles.card]}>
-              <Text style={styles.stepText}>The one-tap install link is not available yet. Until it is, build the shortcut yourself in about a minute:</Text>
-              <Step n="1">Open the Shortcuts app and tap + to make a new shortcut. Name it Add to Outspend.</Step>
-              <Step n="2">Open the shortcut&apos;s details (the i button) and turn on Show in Share Sheet. Under Share Sheet Types keep only Text.</Step>
-              <Step n="3">Add the action URL Encode (Encode Text, with URL as the type) and give it Shortcut Input.</Step>
-              <Step n="4">Add the action Open URLs. Set its URL to outspend://capture?text= followed by the Encoded Text from the previous step.</Step>
-              <Step n="5">Tap Done. It now appears in the share sheet for any text.</Step>
+              <Text style={styles.stepText}>Not needed for Paste. If you like using the Shortcuts app, you can add a share-sheet shortcut yourself:</Text>
+              <Step n="1">In Shortcuts, tap + and name it Add to Outspend.</Step>
+              <Step n="2">Open its details (the i button), turn on Show in Share Sheet, and keep only Text as the type.</Step>
+              <Step n="3">Add URL Encode (set to encode as URL) on Shortcut Input.</Step>
+              <Step n="4">Add Open URLs with outspend://capture?text= followed by the Encoded Text.</Step>
             </View>
           )}
 
           <Text style={styles.section}>Good to know</Text>
           <Text style={styles.note}>
-            Outspend asks you to confirm every message before adding it, so a link from another app can never add a transaction on its own. Nothing is read in the background on iPhone: cards, UPI-style payments and refunds all work the same once a message is shared.
+            Outspend always shows what it understood and asks before adding anything, so a stray paste or a link from another app can never add a transaction on its own. Cards, bank transfers and refunds all work the same once a message is pasted.
           </Text>
         </ScrollView>
       </View>
