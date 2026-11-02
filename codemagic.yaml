@@ -21,7 +21,7 @@ workflows:
       events:
         - push
       branch_patterns:
-        - pattern: fix/ios-capture-decode-and-dedupe
+        - pattern: main
           include: true
     scripts:
       - name: Install dependencies
