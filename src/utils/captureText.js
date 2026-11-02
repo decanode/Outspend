@@ -19,18 +19,3 @@ export const decodeCaptureText = (raw) => {
     return raw
   }
 }
-
-// Returns the decoded message for an outspend://capture URL, or null for any other URL.
-export const getCapturedMessage = (url) => {
-  const match = /^outspend:\/\/capture\/?\?(.*)$/i.exec(url || '')
-  if (!match) return null
-  const param = match[1].split('&').find((p) => p.startsWith('text='))
-  if (!param) return null
-  let value = param.slice(5)
-  try {
-    value = decodeURIComponent(value)
-  } catch {
-    // keep the value as-is
-  }
-  return decodeCaptureText(value)
-}
