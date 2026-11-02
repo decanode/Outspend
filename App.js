@@ -14,6 +14,7 @@ import Settings from './src/screens/Settings'
 import Plan from './src/screens/Plan'
 import LockScreen from './src/components/LockScreen'
 import useCaptureLink from './src/components/useCaptureLink'
+import usePendingCaptures from './src/components/usePendingCaptures'
 import Paywall from './src/screens/Paywall'
 import Onboarding from './src/screens/Onboarding'
 import ErrorBoundary from './src/components/ErrorBoundary'
@@ -152,6 +153,7 @@ export default function App() {
 
   const clearPendingSalary = useCallback(() => setPendingSalary(null), [])
   useCaptureLink(isReady && isOnboarded && !locked) // iPhone share-sheet Shortcut links
+  usePendingCaptures(isReady && isOnboarded && !locked) // iPhone background action queue
 
   const ctx = useMemo(
     () => ({ access, refreshAccess, restartOnboarding, bumpPrefs, pendingSalary, clearPendingSalary }),

@@ -42,3 +42,17 @@ export const previewSharedText = (text, now = Date.now()) => {
   const r = analyzeSms('SHARED', text, now, undefined, { shared: true })
   return r.tx ? { ok: true, tx: r.tx } : { ok: false, reason: r.reject, amount: r.amount, currency: r.currency }
 }
+
+/** Parse queue text into [{ text, at }], skipping blank, malformed or oversized lines. */
+export const parsePendingLines = (raw) => {
+  const out = []
+  for (const line of String(raw || '').split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const { text, at } = JSON.parse(line)
+      const clean = cleanSharedText(text)
+      if (clean) out.push({ text: clean, at: Number.isFinite(at) ? at : Date.now() })
+    } catch { /* ignore a torn line */ }
+  }
+  return out
+}

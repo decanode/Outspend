@@ -31,6 +31,7 @@
     "plugins": [
       "expo-background-task",
       "./plugins/withoutPushEntitlement",
+      "./plugins/withCaptureIntent",
       "expo-notifications",
       [
         "expo-speech-recognition",
