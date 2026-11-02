@@ -1,10 +1,12 @@
+# Codemagic workflow: builds the iPhone app and sends it to TestFlight.
+# Not run yet. It needs the one-time setup described in NEW_IMP_PLAN.MD section 18.
 workflows:
-  ios-release:
-    name: iOS release
+  ios-testflight:
+    name: iOS to TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
-      app_store_connect: Outspend # name of the App Store Connect API key in Codemagic
+      app_store_connect: Outspend # must match the name you give the App Store Connect key in Codemagic
     environment:
       node: 22
       xcode: latest
@@ -13,7 +15,8 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.decanode.outspend
       vars:
-        APP_STORE_APPLE_ID: "" # set to the numeric Apple ID of the app in App Store Connect
+        # Numeric "Apple ID" of the app: App Store Connect > your app > App Information > General Information.
+        APP_STORE_APPLE_ID: "6816864935"
     triggering:
       events:
         - push
@@ -22,20 +25,31 @@ workflows:
           include: true
     scripts:
       - name: Install dependencies
-        script: npm install --legacy-peer-deps
+        script: npm ci --legacy-peer-deps
       - name: Run tests
         script: npm test
-      - name: Generate native iOS project
+      - name: Generate the native iOS project
+        # ios/ is not committed: app.json is the source of truth (permissions, URL scheme, pods).
         script: npx expo prebuild --platform ios --no-install
       - name: Install CocoaPods
         script: cd ios && pod install
-      - name: Set up code signing
-        script: xcode-project use-profiles
-      - name: Build IPA
+      - name: Apply code signing
+        # Scoped to the app's own project only: the unscoped command also tries (and fails) to
+        # sign unrelated .xcodeproj files bundled inside some dependencies, e.g. node_modules/
+        # @react-native-community/datetimepicker/ios/RNDateTimePicker.xcodeproj.
+        script: xcode-project use-profiles --project ios/Outspend.xcodeproj
+      - name: Set the build number
+        # Each TestFlight upload needs a higher build number than the last one.
+        script: |
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || echo 0)
+          NEXT=$(( ${LATEST:-0} + 1 ))
+          echo "Build number: $NEXT"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT" ios/Outspend/Info.plist
+      - name: Build the IPA
         script: |
           xcode-project build-ipa \
-            --workspace "ios/Outspend.xcworkspace" \
-            --scheme "Outspend"
+            --workspace "$CM_BUILD_DIR/ios/Outspend.xcworkspace" \
+            --scheme Outspend
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
