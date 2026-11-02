@@ -18,19 +18,33 @@ const decodeQueryValue = (v) => {
   try { return decodeURIComponent(v.replace(/\+/g, ' ')) } catch { return null }
 }
 
-/** The shared message text from a capture link, or null when the link is not one (or is empty/too long). */
-export const parseCaptureUrl = (url) => {
+/** The shared message text and auto-commit flag from a capture link. */
+export const parseCapturePayload = (url) => {
   if (typeof url !== 'string' || !url.toLowerCase().startsWith(CAPTURE_SCHEME)) return null
   const query = url.slice(url.indexOf('?') + 1)
   if (url.indexOf('?') === -1) return null
+  let text = null
+  let auto = false
   for (const pair of query.split('&')) {
     const eq = pair.indexOf('=')
-    if (eq > -1 && pair.slice(0, eq) === 'text') {
-      const value = decodeQueryValue(pair.slice(eq + 1))
-      return cleanSharedText(value === null ? null : decodeCaptureText(value))
+    if (eq > -1) {
+      const key = pair.slice(0, eq)
+      const rawVal = pair.slice(eq + 1)
+      if (key === 'text') {
+        const value = decodeQueryValue(rawVal)
+        text = cleanSharedText(value === null ? null : decodeCaptureText(value))
+      } else if (key === 'auto' || key === 'silent') {
+        auto = rawVal === '1' || rawVal.toLowerCase() === 'true'
+      }
     }
   }
-  return null
+  return text ? { text, auto } : null
+}
+
+/** The shared message text from a capture link, or null when the link is not one (or is empty/too long). */
+export const parseCaptureUrl = (url) => {
+  const p = parseCapturePayload(url)
+  return p ? p.text : null
 }
 
 /**

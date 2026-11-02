@@ -2,12 +2,14 @@ import * as BackgroundTask from 'expo-background-task'
 import * as TaskManager from 'expo-task-manager'
 import { syncInbox } from './SmsIngest'
 import { refreshReminders } from './NotificationService'
+import { drainPendingCaptures } from './PendingCaptures'
 
 export const BACKGROUND_SYNC_TASK = 'BACKGROUND_SYNC_TASK'
 
 // Must be defined at module scope so the OS can run it with the app closed.
 TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
   try {
+    await drainPendingCaptures()
     await syncInbox()
     await refreshReminders()
     return BackgroundTask.BackgroundTaskResult.Success

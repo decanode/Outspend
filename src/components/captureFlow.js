@@ -13,20 +13,26 @@ const describe = (tx) => {
   return tx.type === 'DEBIT' ? `Expense of ${money}${where}` : tx.type === 'REFUND' ? `Refund of ${money}${where}` : `Income of ${money}${where}`
 }
 
-/** Show what the text means and add it if the user agrees. */
-export const offerToAdd = async (rawText) => {
+/** Show what the text means and add it. When auto is true (e.g. from an automated Shortcut), adds immediately without alert. */
+export const offerToAdd = async (rawText, { auto = false } = {}) => {
   const text = cleanSharedText(rawText)
   if (!text) return
   const preview = previewSharedText(text)
   if (!preview.ok) {
-    Alert.alert(
-      'Could not read this message',
-      preview.amount
-        ? 'It mentions an amount but does not look like a completed payment. It has been saved under Settings > Review skipped messages so you can add it by hand.'
-        : 'It does not look like a bank transaction message.'
-    )
+    if (!auto) {
+      Alert.alert(
+        'Could not read this message',
+        preview.amount
+          ? 'It mentions an amount but does not look like a completed payment. It has been saved under Settings > Review skipped messages so you can add it by hand.'
+          : 'It does not look like a bank transaction message.'
+      )
+    }
     if (preview.amount) await handleSharedText(text) // logs it for review
     return
+  }
+  // Auto-commit from automated Shortcut: no user prompt needed
+  if (auto) {
+    return handleSharedText(text)
   }
   // Ask first: a link from another app can open this, and a paste may be the wrong text.
   Alert.alert('Add this transaction?', describe(preview.tx), [

@@ -1,13 +1,13 @@
 import { useEffect } from 'react'
 import { Linking } from 'react-native'
-import { parseCaptureUrl } from '../services/SharedCapture'
+import { parseCapturePayload } from '../services/SharedCapture'
 import { offerToAdd } from './captureFlow'
 
 let initialHandled = false // getInitialURL keeps returning the launch link; handle it once
 
 const handle = (url) => {
-  const text = parseCaptureUrl(url)
-  if (text) offerToAdd(text)
+  const payload = parseCapturePayload(url)
+  if (payload) offerToAdd(payload.text, { auto: payload.auto })
 }
 
 /** Handle outspend://capture links (optional share-sheet Shortcut), once the app is ready and unlocked. */

@@ -68,6 +68,11 @@
     "ios": {
       "bundleIdentifier": "com.decanode.outspend",
       "supportsTablet": false,
+      "entitlements": {
+        "com.apple.security.application-groups": [
+          "group.com.decanode.outspend"
+        ]
+      },
       "infoPlist": {
         "NSCameraUsageDescription": "Outspend uses the camera so you can photograph receipts. Photos stay on your phone.",
         "NSPhotoLibraryUsageDescription": "Outspend's camera feature is only used to capture and store receipt photos privately within the app. Your photo library is never read or modified."

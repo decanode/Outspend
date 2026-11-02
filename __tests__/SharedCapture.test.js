@@ -1,4 +1,4 @@
-import { parseCaptureUrl, previewSharedText, cleanSharedText, MAX_SHARED_LENGTH } from '../src/services/SharedCapture'
+import { parseCaptureUrl, parseCapturePayload, previewSharedText, cleanSharedText, MAX_SHARED_LENGTH } from '../src/services/SharedCapture'
 import { planIngest } from '../src/services/IngestPlanner'
 import { analyzeSms } from '../src/services/RegexEngine'
 import { setRegion } from '../src/regions'
@@ -17,6 +17,11 @@ describe('capture links', () => {
   })
   test('scheme is case-insensitive and other parameters are ignored', () => {
     expect(parseCaptureUrl(`OUTSPEND://capture?source=sc&text=${enc('Paid Rs.5 to X')}&x=1`)).toBe('Paid Rs.5 to X')
+  })
+  test('detects auto-commit flag from automated shortcuts', () => {
+    expect(parseCapturePayload(`outspend://capture?text=${enc(BODY)}`)).toEqual({ text: BODY, auto: false })
+    expect(parseCapturePayload(`outspend://capture?auto=1&text=${enc(BODY)}`)).toEqual({ text: BODY, auto: true })
+    expect(parseCapturePayload(`outspend://capture?silent=true&text=${enc(BODY)}`)).toEqual({ text: BODY, auto: true })
   })
   test.each([
     ['https://evil.example/capture?text=Rs.5 debited'],

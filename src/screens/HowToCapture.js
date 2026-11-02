@@ -1,8 +1,6 @@
 import React from 'react'
-import { View, Text, StyleSheet, Modal, ScrollView, Linking } from 'react-native'
+import { View, Text, StyleSheet, Modal, ScrollView } from 'react-native'
 import { COLORS, GLASS_STYLES } from '../theme/designSystem'
-import { Button } from '../components/ui'
-import { SHORTCUT_URL } from '../config'
 
 const Step = ({ n, children }) => (
   <View style={styles.step}>
@@ -25,32 +23,31 @@ export default function HowToCapture({ onClose }) {
         </View>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
           <Text style={styles.lead}>
-            Apple does not allow any app to read your text messages, so Outspend cannot see them on its own. Instead you copy a bank message and paste it into Outspend. It takes a few seconds, and the message never leaves your phone.
+            Apple does not allow any app to read your text messages directly. But with a simple 1-minute Shortcut automation, Outspend can capture all your bank messages silently and automatically in the background.
           </Text>
 
-          <Text style={styles.section}>Each time</Text>
+          <Text style={styles.section}>Automatic background capture (recommended)</Text>
           <View style={[GLASS_STYLES.card, styles.card]}>
-            <Step n="1">Open the bank message in Messages.</Step>
-            <Step n="2">Touch and hold the message bubble, then tap Copy.</Step>
-            <Step n="3">Open Outspend and tap Paste bank message on the Home tab. If iPhone asks, tap Allow Paste.</Step>
-            <Step n="4">Check what Outspend understood and tap Add. If the shop is unknown, name it from the Needs attention card.</Step>
+            <Step n="1">Open the Shortcuts app on your iPhone and tap Automation at the bottom.</Step>
+            <Step n="2">Tap + in the top-right corner, then choose Message.</Step>
+            <Step n="3">In &quot;Message Contains&quot;, enter keywords like debited, credited, or spent.</Step>
+            <Step n="4">Select Run Immediately and turn off Notify When Run. Tap Next.</Step>
+            <Step n="5">Choose New Blank Automation, tap Add Action, and search for Outspend.</Step>
+            <Step n="6">Select &quot;Add transaction to Outspend&quot; and set the message to Shortcut Input.</Step>
           </View>
           <Text style={styles.note}>
-            The transaction is dated today; open it in the Ledger to change the date. Pasting the same message twice adds it once. To stop iPhone asking each time, go to Settings, Apps, Outspend, Paste from Other Apps, and choose Allow.
+            Once set up, whenever a bank message arrives, it is logged automatically in the background. You never have to copy, paste, or open the app manually.
           </Text>
 
-          <Text style={styles.section}>Optional: one tap from the share sheet</Text>
-          {SHORTCUT_URL ? (
-            <Button title="Install the Add to Outspend shortcut" onPress={() => Linking.openURL(SHORTCUT_URL)} />
-          ) : (
-            <View style={[GLASS_STYLES.card, styles.card]}>
-              <Text style={styles.stepText}>Not needed for Paste. If you like using the Shortcuts app, you can add a share-sheet shortcut yourself:</Text>
-              <Step n="1">In Shortcuts, tap + and name it Add to Outspend.</Step>
-              <Step n="2">Open its details (the i button), turn on Show in Share Sheet, and keep only Text as the type.</Step>
-              <Step n="3">Add URL Encode (set to encode as URL) on Shortcut Input.</Step>
-              <Step n="4">Add Open URLs with outspend://capture?text= followed by the Encoded Text.</Step>
-            </View>
-          )}
+          <Text style={styles.section}>Alternative: copy and paste</Text>
+          <View style={[GLASS_STYLES.card, styles.card]}>
+            <Step n="1">Open the bank message in Messages, touch and hold it, and tap Copy.</Step>
+            <Step n="2">Open Outspend and tap Paste bank message on the Home tab.</Step>
+            <Step n="3">Check what Outspend understood and tap Add.</Step>
+          </View>
+          <Text style={styles.note}>
+            Pasting the same message twice adds it once. To stop iPhone asking each time you paste, go to Settings &gt; Apps &gt; Outspend &gt; Paste from Other Apps &gt; Allow.
+          </Text>
 
           <Text style={styles.section}>Good to know</Text>
           <Text style={styles.note}>
