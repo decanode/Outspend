@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Linking, Alert } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +14,8 @@ import Paywall from './src/screens/Paywall';
 import Onboarding from './src/screens/Onboarding';
 import { checkEntitlement } from './src/services/BillingService';
 import { registerBackgroundSync } from './src/services/BackgroundSync';
+import { getCapturedMessage } from './src/utils/captureText';
+import { processSharedMessage } from './src/services/TransactionManager';
 import { scheduleSubscriptionReminders } from './src/services/NotificationService';
 
 const Tab = createBottomTabNavigator();
@@ -35,6 +37,21 @@ export default function App() {
       setIsReady(true);
     }
     initApp();
+  }, []);
+
+  // iOS Shortcut: outspend://capture?text=<Base64>
+  useEffect(() => {
+    const handleUrl = async (url) => {
+      const message = getCapturedMessage(url);
+      if (message === null) return;
+      const saved = await processSharedMessage(message).catch(() => null);
+      if (!saved) {
+        Alert.alert('Could not read this message', 'It does not look like a bank transaction message.');
+      }
+    };
+    Linking.getInitialURL().then((url) => url && handleUrl(url));
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => sub.remove();
   }, []);
 
   if (!isReady) {

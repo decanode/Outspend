@@ -1,18 +1,29 @@
 export const TRAI_SENDER_REGEX = /^[A-Z]{2}-[A-Za-z]{6}$/
 
+// Bank reference (UTR / RRN / Ref no.) used to recognise the same transaction across messages.
+export const extractReference = (body) => {
+  const match = body.match(/(?:UTR|RRN|Ref(?:erence)?)(?:\s*(?:No\.?|Number))?\s*[:\-#.]?\s*(?:UPI\/)?([A-Za-z0-9]{8,})/i)
+  return match ? match[1].toUpperCase() : null
+}
+
 export const parseSmsTransaction = (sender, body, timestamp) => {
-  // 1. Verify TRAI Sender ID
+  // Verify TRAI Sender ID
   if (!TRAI_SENDER_REGEX.test(sender)) {
     return null // Ignore personal conversations
   }
+  return parseBankMessage(body, timestamp, 'SMS')
+}
 
+// Parses a bank message body with no sender check (e.g. text shared from the iOS Shortcut).
+export const parseBankMessage = (body, timestamp, source = 'SMS') => {
   const transaction = {
     amount: null,
     merchant: null,
     type: null,
     timestamp: timestamp,
-    source: 'SMS',
+    source,
     raw_text: body,
+    external_id: extractReference(body),
     needs_review: false
   }
 
